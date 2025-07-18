@@ -11,7 +11,7 @@ ApplicationBase::ApplicationBase() {
 
 	_instance = Instance::create("Bejzak Engine", requiredExtensions).value();
 #ifdef VALIDATION_LAYERS_ENABLED
-	_debugMessenger = std::make_unique<DebugMessenger>(*_instance);
+	_debugMessenger = DebugMessenger::create(*_instance).value();
 #endif // VALIDATION_LAYERS_ENABLED
 
 	_surface = _window->createSurface(*_instance).value();
