@@ -49,10 +49,6 @@ endif()
 
 add_definitions(-DGLM_FORCE_NO_CTOR_INIT)
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/external/glfw)
-add_subdirectory(${CMAKE_SOURCE_DIR}/external/tinyobjloader)
-add_subdirectory(${CMAKE_SOURCE_DIR}/external/googletest)
-
 if(WIN32)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
@@ -61,4 +57,30 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
 endif()
 
-# add_subdirectory(sources)
+add_subdirectory(bejzak_engine)
+
+add_executable(${CMAKE_PROJECT_NAME} main.cpp application_base.cpp application.cpp)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE LibStrongTypes)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Window Instance Surface DebugMessenger PhysicalDevice MemoryAllocator LogicalDevice Renderpass Swapchain Buffer CommandBuffer Framebuffer Pipeline OBJLoader TinyGLTFLoader DescriptorSet Camera Screenshot Entity ComponentSystem ECSRegistry Object ThreadPool Primitives AssetManager)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBJLoader)
+
+if(WIN32)
+    set(SHADER_COMPILE_SCRIPT
+    "${PROJECT_SOURCE_DIR}/bejzak_engine/shaders/compile_shaders.bat")
+elseif(UNIX)
+    set(SHADER_COMPILE_SCRIPT
+    "${PROJECT_SOURCE_DIR}/bejzak_engine/shaders/compile_shaders.sh")
+endif()
+
+file(CHMOD ${SHADER_COMPILE_SCRIPT} PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ)
+
+add_custom_target(
+    CompileShaders
+    COMMAND ${SHADER_COMPILE_SCRIPT}
+    COMMENT "Compiling shaders...")
+
+add_dependencies(${CMAKE_PROJECT_NAME} CompileShaders)
+
+add_compile_definitions(SHADERS_PATH="${PROJECT_SOURCE_DIR}/bejzak_engine/shaders/")
+add_compile_definitions(TEXTURES_PATH="${PROJECT_SOURCE_DIR}/assets/textures/")
+add_compile_definitions(MODELS_PATH="${PROJECT_SOURCE_DIR}/assets/models/")
