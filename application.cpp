@@ -442,20 +442,18 @@ Status Application::createCommandBuffers() {
 
     for (int i = 0; i < MAX_THREADS_IN_POOL + 1; i++) {
 		ASSIGN_OR_RETURN(_commandPool[i], CommandPool::create(*_logicalDevice));
-        // _commandPool.emplace_back(std::make_unique<CommandPool>(*_logicalDevice));
     }
-    _primaryCommandBuffer.reserve(MAX_FRAMES_IN_FLIGHT);
+	ASSIGN_OR_RETURN(_primaryCommandBuffer, _commandPool[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
     _commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
     _shadowCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        _primaryCommandBuffer.emplace_back(_commandPool[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffer());
-        _commandBuffers[i].reserve(MAX_THREADS_IN_POOL);
-        _shadowCommandBuffers[i].reserve(MAX_THREADS_IN_POOL);
+        _commandBuffers[i].resize(MAX_THREADS_IN_POOL);
+        _shadowCommandBuffers[i].resize(MAX_THREADS_IN_POOL);
 
         for (int j = 0; j < MAX_THREADS_IN_POOL; j++) {
-            _commandBuffers[i].emplace_back(_commandPool[j]->createSecondaryCommandBuffer());
-            _shadowCommandBuffers[i].emplace_back(_commandPool[j]->createSecondaryCommandBuffer());
+			ASSIGN_OR_RETURN(_commandBuffers[i][j], _commandPool[j]->createSecondaryCommandBuffer());
+            ASSIGN_OR_RETURN(_shadowCommandBuffers[i][j], _commandPool[j]->createSecondaryCommandBuffer());
         }
     }
 }
