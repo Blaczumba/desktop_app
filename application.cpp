@@ -368,7 +368,7 @@ void Application::draw() {
 
     _primaryCommandBuffer[_currentFrame]->resetCommandBuffer();
     for(int i = 0; i < MAX_THREADS_IN_POOL; i++)
-        _commandBuffers[_currentFrame][i]->resetCommandBuffer();
+        _commandBuffers[i][_currentFrame]->resetCommandBuffer();
 
     //recordShadowCommandBuffer(_shadowCommandBuffers[_currentFrame], imageIndex);
     recordCommandBuffer(imageIndex);
@@ -444,17 +444,10 @@ Status Application::createCommandBuffers() {
 		ASSIGN_OR_RETURN(_commandPool[i], CommandPool::create(*_logicalDevice));
     }
 	ASSIGN_OR_RETURN(_primaryCommandBuffer, _commandPool[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-    _commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    _shadowCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        _commandBuffers[i].resize(MAX_THREADS_IN_POOL);
-        _shadowCommandBuffers[i].resize(MAX_THREADS_IN_POOL);
-
-        for (int j = 0; j < MAX_THREADS_IN_POOL; j++) {
-			ASSIGN_OR_RETURN(_commandBuffers[i][j], _commandPool[j]->createSecondaryCommandBuffer());
-            ASSIGN_OR_RETURN(_shadowCommandBuffers[i][j], _commandPool[j]->createSecondaryCommandBuffer());
-        }
+    _commandBuffers.resize(MAX_THREADS_IN_POOL);
+    for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
+		ASSIGN_OR_RETURN(_commandBuffers[i], _commandPool[i]->createSecondaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
     }
 }
 
@@ -533,13 +526,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     std::array<std::future<void>, MAX_THREADS_IN_POOL> futures;
 
     futures[0] = std::async(std::launch::async, [&]() {
-        const VkCommandBuffer commandBuffer = _commandBuffers[_currentFrame][0]->getVkCommandBuffer();
+        const VkCommandBuffer commandBuffer = _commandBuffers[0][_currentFrame]->getVkCommandBuffer();
 
         if (viewportScissorInheritance) [[likely]] {
-            _commandBuffers[_currentFrame][0]->begin(framebuffer, &scissorViewportInheritance);
+            _commandBuffers[0][_currentFrame]->begin(framebuffer, &scissorViewportInheritance);
         }
         else {
-            _commandBuffers[_currentFrame][0]->begin(framebuffer, nullptr);
+            _commandBuffers[0][_currentFrame]->begin(framebuffer, nullptr);
             vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
             vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
         }
@@ -554,13 +547,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     futures[1] = std::async(std::launch::async, [&]() {
         // Skybox
-        const VkCommandBuffer commandBuffer = _commandBuffers[_currentFrame][1]->getVkCommandBuffer();
+        const VkCommandBuffer commandBuffer = _commandBuffers[1][_currentFrame]->getVkCommandBuffer();
 
         if (viewportScissorInheritance) [[likely]] {
-            _commandBuffers[_currentFrame][1]->begin(framebuffer, &scissorViewportInheritance);
+            _commandBuffers[1][_currentFrame]->begin(framebuffer, &scissorViewportInheritance);
         }
         else {
-            _commandBuffers[_currentFrame][1]->begin(framebuffer, nullptr);
+            _commandBuffers[1][_currentFrame]->begin(framebuffer, nullptr);
             vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
             vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
         }
@@ -586,7 +579,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     futures[0].wait();
     futures[1].wait();
 
-    primaryCommandBuffer.executeSecondaryCommandBuffers({ _commandBuffers[_currentFrame][0]->getVkCommandBuffer(), _commandBuffers[_currentFrame][1]->getVkCommandBuffer()});
+    primaryCommandBuffer.executeSecondaryCommandBuffers({ _commandBuffers[0][_currentFrame]->getVkCommandBuffer(), _commandBuffers[1][_currentFrame]->getVkCommandBuffer()});
     primaryCommandBuffer.endRenderPass();
 
     if (primaryCommandBuffer.end() != VK_SUCCESS) {
