@@ -1,9 +1,8 @@
 #pragma once
 
-#include "application_base.h"
-
 #include "bejzak_engine/sources/camera/fps_camera.h"
 #include "bejzak_engine/sources/command_buffer/command_buffer.h"
+#include "bejzak_engine/sources/debug_messenger/debug_messenger.h"
 #include "bejzak_engine/sources/descriptor_set/bindless_descriptor_set_writer.h"
 #include "bejzak_engine/sources/descriptor_set/descriptor_pool.h"
 #include "bejzak_engine/sources/descriptor_set/descriptor_set.h"
@@ -11,21 +10,39 @@
 #include "bejzak_engine/sources/descriptor_set/descriptor_set_writer.h"
 #include "bejzak_engine/sources/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/sources/framebuffer/framebuffer.h"
+#include "bejzak_engine/sources/instance/instance.h"
+#include "bejzak_engine/sources/logical_device/logical_device.h"
 #include "bejzak_engine/sources/memory_objects/buffer.h"
 #include "bejzak_engine/sources/memory_objects/texture.h"
 #include "bejzak_engine/sources/model_loader/obj_loader/obj_loader.h"
 #include "bejzak_engine/sources/object/object.h"
+#include "bejzak_engine/sources/pipeline/graphics_pipeline.h"
+#include "bejzak_engine/sources/pipeline/shader_program.h"
+#include "bejzak_engine/sources/physical_device/physical_device.h"
 #include "bejzak_engine/sources/render_pass/render_pass.h"
 #include "bejzak_engine/sources/resource_manager/asset_manager.h"
 #include "bejzak_engine/sources/scene/octree.h"
 #include "bejzak_engine/sources/screenshot/screenshot.h"
 #include "bejzak_engine/sources/status/status.h"
+#include "bejzak_engine/sources/swapchain/swapchain.h"
 #include "bejzak_engine/sources/thread_pool/thread_pool.h"
-#include "bejzak_engine/sources/pipeline/graphics_pipeline.h"
+#include "bejzak_engine/sources/window/window.h"
 
 #include <unordered_map>
 
-class Application : public ApplicationBase {
+class Application {
+    std::unique_ptr<Instance> _instance;
+#ifdef VALIDATION_LAYERS_ENABLED
+    std::unique_ptr<DebugMessenger> _debugMessenger;
+#endif // VALIDATION_LAYERS_ENABLED
+    std::unique_ptr<Window> _window;
+    std::unique_ptr<Surface> _surface;
+    std::unique_ptr<PhysicalDevice> _physicalDevice;
+    std::unique_ptr<LogicalDevice> _logicalDevice;
+    std::unique_ptr<Swapchain> _swapchain;
+    std::unique_ptr<CommandPool> _singleTimeCommandPool;
+    std::unique_ptr<ShaderProgramManager> _programManager;
+
     uint32_t index = 0;
     std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
     std::unordered_map<std::string, Buffer> _vertexBufferMap;
@@ -78,7 +95,7 @@ class Application : public ApplicationBase {
 
     std::unique_ptr<FPSCamera> _camera;
 
-    std::vector<std::unique_ptr<CommandPool>> _commandPool;
+    std::vector<std::shared_ptr<CommandPool>> _commandPool;
     std::vector<std::unique_ptr<PrimaryCommandBuffer>> _primaryCommandBuffer;
     std::vector<std::vector<std::unique_ptr<SecondaryCommandBuffer>>> _commandBuffers;
     std::vector<std::vector<std::unique_ptr<SecondaryCommandBuffer>>> _shadowCommandBuffers;
@@ -103,11 +120,12 @@ public:
     Application(Application&&) = delete;
     void operator=(const Application&) = delete;
 
-    void run() override;
+    void run();
 private:
+	Status init();
     void setInput();
     void draw();
-    void createCommandBuffers();
+    Status createCommandBuffers();
     void createSyncObjects();
     void updateUniformBuffer(uint32_t currentImage);
     void recordCommandBuffer(uint32_t imageIndex);

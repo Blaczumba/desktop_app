@@ -13,22 +13,39 @@
 #include "bejzak_engine/sources/render_pass/attachment_layout.h"
 #include "bejzak_engine/sources/status/status.h"
 #include "bejzak_engine/sources/thread_pool/thread_pool.h"
+#include "bejzak_engine/sources/window/window_glfw.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <print>
 
-Application::Application()
-    : ApplicationBase() {
-    
+Application::Application() {
+    if (Status status = init(); !status) {
+		std::println("Failed to initialize application: {}", errorToString(status.error()));
+	}
+
     _assetManager = std::make_unique<AssetManager>(*_logicalDevice);
 
-    createDescriptorSets();
-    loadObjects();
-    loadCubemap();
-    createPresentResources();
-    createShadowResources();
+    if (Status status = createDescriptorSets(); !status) {
+		std::println("Failed to create descriptor sets: {}", errorToString(status.error()));
+    }
+
+    if (Status status = loadObjects(); !status) {
+		std::println("Failed to load objects: {}", errorToString(status.error()));
+    }
+    
+    if (Status status = loadCubemap(); !status) {
+        std::println("Failed to load cubemap: {}", errorToString(status.error()));
+    }
+
+	if (Status status = createPresentResources(); !status) {
+		std::println("Failed to create present resources: {}", errorToString(status.error()));
+	}
+    
+    if (Status status = createShadowResources(); !status) {
+        std::println("Failed to create shadow resources: {}", errorToString(status.error()));
+	}
     createCommandBuffers();
     _camera = std::make_unique<FPSCamera>(glm::radians(45.0f), 1920.0f / 1080.0f, 0.01f, 100.0f);
     setInput();
@@ -57,6 +74,27 @@ uint32_t getIndexSize(VkIndexType type) {
         return 4;
     }
     return 0;
+}
+
+Status Application::init() {
+    ASSIGN_OR_RETURN(_window, Window::createWindow("Bejzak Engine", 1920, 1080));
+    std::vector<const char*>requiredExtensions = _window->getExtensions();
+#ifdef VALIDATION_LAYERS_ENABLED
+    requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif // VALIDATION_LAYERS_ENABLED
+    requiredExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+
+    ASSIGN_OR_RETURN(_instance, Instance::create("Bejzak Engine", requiredExtensions));
+#ifdef VALIDATION_LAYERS_ENABLED
+    ASSIGN_OR_RETURN(_debugMessenger, DebugMessenger::create(*_instance));
+#endif // VALIDATION_LAYERS_ENABLED
+
+    ASSIGN_OR_RETURN(_surface, _window->createSurface(*_instance));
+    ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(*_surface));
+    ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
+    _programManager = std::make_unique<ShaderProgramManager>(*_logicalDevice);
+    ASSIGN_OR_RETURN(_swapchain, Swapchain::create(*_logicalDevice));
+    ASSIGN_OR_RETURN(_singleTimeCommandPool, CommandPool::create(*_logicalDevice));
 }
 
 void Application::setInput() {
@@ -399,11 +437,12 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
     _dynamicUniformBuffersCamera.copyData(_ubCamera, currentFrame * _physicalDevice->getMemoryAlignment(sizeof(UniformBufferCamera)));
 }
 
-void Application::createCommandBuffers() {
-    _commandPool.reserve(MAX_THREADS_IN_POOL + 1);
+Status Application::createCommandBuffers() {
+    _commandPool.resize(MAX_THREADS_IN_POOL + 1);
 
     for (int i = 0; i < MAX_THREADS_IN_POOL + 1; i++) {
-        _commandPool.emplace_back(std::make_unique<CommandPool>(*_logicalDevice));
+		ASSIGN_OR_RETURN(_commandPool[i], CommandPool::create(*_logicalDevice));
+        // _commandPool.emplace_back(std::make_unique<CommandPool>(*_logicalDevice));
     }
     _primaryCommandBuffer.reserve(MAX_FRAMES_IN_FLIGHT);
     _commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);

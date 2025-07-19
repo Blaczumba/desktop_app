@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+﻿cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_PROJECT_NAME BejzakEngine)
 
@@ -59,9 +59,9 @@ endif()
 
 add_subdirectory(bejzak_engine)
 
-add_executable(${CMAKE_PROJECT_NAME} main.cpp application_base.cpp application.cpp)
+add_executable(${CMAKE_PROJECT_NAME} main.cpp application.cpp)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE LibStrongTypes)
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Window Instance Surface DebugMessenger PhysicalDevice MemoryAllocator LogicalDevice Renderpass Swapchain Buffer CommandBuffer Framebuffer Pipeline OBJLoader TinyGLTFLoader DescriptorSet Camera Screenshot Entity ComponentSystem ECSRegistry Object ThreadPool Primitives AssetManager)
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Status Window Instance Surface DebugMessenger PhysicalDevice MemoryAllocator LogicalDevice Renderpass Swapchain Buffer CommandBuffer Framebuffer Pipeline OBJLoader TinyGLTFLoader DescriptorSet Camera Screenshot Entity ComponentSystem ECSRegistry Object ThreadPool Primitives AssetManager)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBJLoader)
 
 if(WIN32)
