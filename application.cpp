@@ -46,10 +46,16 @@ Application::Application() {
     if (Status status = createShadowResources(); !status) {
         std::println("Failed to create shadow resources: {}", errorToString(status.error()));
 	}
-    createCommandBuffers();
+
+    if (Status status = createCommandBuffers(); !status) {
+		std::println("Failed to create command buffers: {}", errorToString(status.error()));
+    }
+
+    if (Status status = createSyncObjects(); !status) {
+		std::println("Failed to create sync objects: {}", errorToString(status.error()));
+    }
     _camera = std::make_unique<FPSCamera>(glm::radians(45.0f), 1920.0f / 1080.0f, 0.01f, 100.0f);
     setInput();
-    createSyncObjects();
 }
 
 VkIndexType getIndexType(uint32_t stride) {
@@ -98,28 +104,30 @@ Status Application::init() {
 }
 
 void Application::setInput() {
-    if (MouseKeyboardManager* manager = _window->getMouseKeyboardManager(); manager != nullptr) {
-        // manager->absorbCursor();
-
-        manager->setKeyboardCallback([&](Keyboard::Key key, int action) {
-            switch (key) {
-            case Keyboard::Key::Escape:
-                _window->close();
-                break;
-            }
-        });
-
-        manager->setMouseMoveCallback([&](float xPosIn, float yPosIn) {
-            static float lastX = xPosIn;
-            static float lastY = yPosIn;
-
-            _mouseXOffset = xPosIn - lastX;
-            _mouseYOffset = lastY - yPosIn; // reversed since y-coordinates go from bottom to top
-
-            lastX = xPosIn;
-            lastY = yPosIn;
-        });
+    const MouseKeyboardManager* manager = _window->getMouseKeyboardManager();
+    if (manager == nullptr) {
+        return;
     }
+    // manager->absorbCursor();
+
+    manager->setKeyboardCallback([&](Keyboard::Key key, int action) {
+        switch (key) {
+        case Keyboard::Key::Escape:
+            _window->close();
+            break;
+        }
+    });
+
+    manager->setMouseMoveCallback([&](float xPosIn, float yPosIn) {
+        static float lastX = xPosIn;
+        static float lastY = yPosIn;
+
+        _mouseXOffset = xPosIn - lastX;
+        _mouseYOffset = lastY - yPosIn; // reversed since y-coordinates go from bottom to top
+
+        lastX = xPosIn;
+        lastY = yPosIn;
+    });
 }
 
 Status Application::loadCubemap() {
@@ -128,12 +136,12 @@ Status Application::loadCubemap() {
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-        ASSIGN_OR_RETURN(auto vData, _assetManager->getVertexData("cube.obj"));
-        ASSIGN_OR_RETURN(_vertexBufferCube, Buffer::createVertexBuffer(*_logicalDevice, vData->vertexBufferPositions.getSize()));
-        RETURN_IF_ERROR(_vertexBufferCube.copyBuffer(commandBuffer, vData->vertexBufferPositions));
-        ASSIGN_OR_RETURN(_indexBufferCube, Buffer::createIndexBuffer(*_logicalDevice, vData->indexBuffer.getSize()));
-        RETURN_IF_ERROR(_indexBufferCube.copyBuffer(commandBuffer, vData->indexBuffer));
-        _indexBufferCubeType = vData->indexType;
+        ASSIGN_OR_RETURN(const AssetManager::VertexData& vData, _assetManager->getVertexData("cube.obj"));
+        ASSIGN_OR_RETURN(_vertexBufferCube, Buffer::createVertexBuffer(*_logicalDevice, vData.vertexBufferPositions.getSize()));
+        RETURN_IF_ERROR(_vertexBufferCube.copyBuffer(commandBuffer, vData.vertexBufferPositions));
+        ASSIGN_OR_RETURN(_indexBufferCube, Buffer::createIndexBuffer(*_logicalDevice, vData.indexBuffer.getSize()));
+        RETURN_IF_ERROR(_indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer));
+        _indexBufferCubeType = vData.indexType;
     }
     return StatusOk();
 }
@@ -162,31 +170,31 @@ Status Application::loadObjects() {
             const std::string metallicRoughnessPath = MODELS_PATH "sponza/" + sceneData[i].metallicRoughnessTexture;
             const std::string normalPath = MODELS_PATH "sponza/" + sceneData[i].normalTexture;
             if (!_textures.contains(diffusePath)) {
-                ASSIGN_OR_RETURN(const AssetManager::ImageData* imgData, _assetManager->getImageData(diffusePath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData->stagingBuffer.getVkBuffer(), imgData->imageDimensions, VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(diffusePath));
+                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy));
                 _textures.emplace(diffusePath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             if (!_textures.contains(normalPath)) {
-                ASSIGN_OR_RETURN(const AssetManager::ImageData* imgData, _assetManager->getImageData(normalPath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData->stagingBuffer.getVkBuffer(), imgData->imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(normalPath));
+                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
                 _textures.emplace(normalPath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             if (!_textures.contains(metallicRoughnessPath)) {
-                ASSIGN_OR_RETURN(const AssetManager::ImageData* imgData, _assetManager->getImageData(metallicRoughnessPath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData->stagingBuffer.getVkBuffer(), imgData->imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(metallicRoughnessPath));
+                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
                 _textures.emplace(metallicRoughnessPath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             _objects.emplace_back("Object", e);
             _registry.addComponent<MaterialComponent>(e, MaterialComponent{_textures[diffusePath].first, _textures[normalPath].first, _textures[metallicRoughnessPath].first });
-            ASSIGN_OR_RETURN(auto vData, _assetManager->getVertexData(std::to_string(i)));
+            ASSIGN_OR_RETURN(const AssetManager::VertexData& vData, _assetManager->getVertexData(std::to_string(i)));
             MeshComponent msh;
-            ASSIGN_OR_RETURN(msh.vertexBuffer, Buffer::createVertexBuffer(*_logicalDevice, vData->vertexBuffer.getSize()));
-            RETURN_IF_ERROR(msh.vertexBuffer.copyBuffer(commandBuffer, vData->vertexBuffer));
-            ASSIGN_OR_RETURN(msh.indexBuffer, Buffer::createIndexBuffer(*_logicalDevice, vData->indexBuffer.getSize()));
-            RETURN_IF_ERROR(msh.indexBuffer.copyBuffer(commandBuffer, vData->indexBuffer));
-            ASSIGN_OR_RETURN(msh.vertexBufferPrimitive, Buffer::createVertexBuffer(*_logicalDevice, vData->vertexBufferPositions.getSize()));
-            RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(commandBuffer, vData->vertexBufferPositions));
-            msh.indexType = vData->indexType;
+            ASSIGN_OR_RETURN(msh.vertexBuffer, Buffer::createVertexBuffer(*_logicalDevice, vData.vertexBuffer.getSize()));
+            RETURN_IF_ERROR(msh.vertexBuffer.copyBuffer(commandBuffer, vData.vertexBuffer));
+            ASSIGN_OR_RETURN(msh.indexBuffer, Buffer::createIndexBuffer(*_logicalDevice, vData.indexBuffer.getSize()));
+            RETURN_IF_ERROR(msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer));
+            ASSIGN_OR_RETURN(msh.vertexBufferPrimitive, Buffer::createVertexBuffer(*_logicalDevice, vData.vertexBufferPositions.getSize()));
+            RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(commandBuffer, vData.vertexBufferPositions));
+            msh.indexType = vData.indexType;
             msh.aabb = createAABBfromVertices(std::vector<glm::vec3>(sceneData[i].positions.cbegin(), sceneData[i].positions.cend()), sceneData[i].model);
             _registry.addComponent<MeshComponent>(e, std::move(msh));
 
@@ -216,8 +224,8 @@ Status Application::createDescriptorSets() {
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-        ASSIGN_OR_RETURN(const AssetManager::ImageData* imgData, _assetManager->getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
-        ASSIGN_OR_RETURN(_textureCubemap, Texture::createCubemap(*_logicalDevice, commandBuffer, imgData->stagingBuffer.getVkBuffer(), imgData->imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+        ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
+        ASSIGN_OR_RETURN(_textureCubemap, Texture::createCubemap(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
         ASSIGN_OR_RETURN(_shadowMap, Texture::create2DShadowmap(*_logicalDevice, commandBuffer, 1024 * 2, 1024 * 2, VK_FORMAT_D32_SFLOAT));
     }
 
@@ -366,9 +374,9 @@ void Application::draw() {
     updateUniformBuffer(_currentFrame);
     vkResetFences(device, 1, &_inFlightFences[_currentFrame]);
 
-    _primaryCommandBuffer[_currentFrame]->resetCommandBuffer();
+    _primaryCommandBuffer[_currentFrame].resetCommandBuffer();
     for(int i = 0; i < MAX_THREADS_IN_POOL; i++)
-        _commandBuffers[i][_currentFrame]->resetCommandBuffer();
+        _commandBuffers[i][_currentFrame].resetCommandBuffer();
 
     //recordShadowCommandBuffer(_shadowCommandBuffers[_currentFrame], imageIndex);
     recordCommandBuffer(imageIndex);
@@ -382,7 +390,7 @@ void Application::draw() {
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
 
-    std::array<VkCommandBuffer, 1> submitCommands = { _primaryCommandBuffer[_currentFrame]->getVkCommandBuffer() };
+    std::array<VkCommandBuffer, 1> submitCommands = { _primaryCommandBuffer[_currentFrame].getVkCommandBuffer() };
     submitInfo.commandBufferCount = static_cast<uint32_t>(submitCommands.size());
     submitInfo.pCommandBuffers = submitCommands.data();
 
@@ -407,11 +415,7 @@ void Application::draw() {
     }
 }
 
-void Application::createSyncObjects() {
-    _imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    _renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    _inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
+Status Application::createSyncObjects() {
     const VkDevice device = _logicalDevice->getVkDevice();
     const VkSemaphoreCreateInfo semaphoreInfo = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
@@ -422,12 +426,17 @@ void Application::createSyncObjects() {
     };
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(device, &fenceInfo, nullptr, &_inFlightFences[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create synchronization objects for a frame!");
+        if (VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &_imageAvailableSemaphores[i]); result != VK_SUCCESS) {
+            return Error(result);
+        }
+        if (VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]); result != VK_SUCCESS) {
+            return Error(result);
+        }
+        if (VkResult result = vkCreateFence(device, &fenceInfo, nullptr, &_inFlightFences[i]); result != VK_SUCCESS) {
+            return Error(result);
         }
     }
+	return StatusOk();
 }
 
 void Application::updateUniformBuffer(uint32_t currentFrame) {
@@ -438,16 +447,12 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
 }
 
 Status Application::createCommandBuffers() {
-    _commandPool.resize(MAX_THREADS_IN_POOL + 1);
-
     for (int i = 0; i < MAX_THREADS_IN_POOL + 1; i++) {
-		ASSIGN_OR_RETURN(_commandPool[i], CommandPool::create(*_logicalDevice));
+		ASSIGN_OR_RETURN(_commandPools[i], CommandPool::create(*_logicalDevice));
     }
-	ASSIGN_OR_RETURN(_primaryCommandBuffer, _commandPool[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-
-    _commandBuffers.resize(MAX_THREADS_IN_POOL);
+	ASSIGN_OR_RETURN(_primaryCommandBuffer, _commandPools[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
     for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
-		ASSIGN_OR_RETURN(_commandBuffers[i], _commandPool[i]->createSecondaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+		ASSIGN_OR_RETURN(_commandBuffers[i], _commandPools[i]->createSecondaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
     }
 }
 
@@ -508,7 +513,7 @@ void Application::recordOctreeSecondaryCommandBuffer(const VkCommandBuffer comma
 
 void Application::recordCommandBuffer(uint32_t imageIndex) {
     const Framebuffer& framebuffer = *_framebuffers[imageIndex];
-    const PrimaryCommandBuffer& primaryCommandBuffer = *_primaryCommandBuffer[_currentFrame];
+    const PrimaryCommandBuffer& primaryCommandBuffer = _primaryCommandBuffer[_currentFrame];
     primaryCommandBuffer.begin();
     primaryCommandBuffer.beginRenderPass(framebuffer);
 
@@ -526,13 +531,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     std::array<std::future<void>, MAX_THREADS_IN_POOL> futures;
 
     futures[0] = std::async(std::launch::async, [&]() {
-        const VkCommandBuffer commandBuffer = _commandBuffers[0][_currentFrame]->getVkCommandBuffer();
+        const VkCommandBuffer commandBuffer = _commandBuffers[0][_currentFrame].getVkCommandBuffer();
 
         if (viewportScissorInheritance) [[likely]] {
-            _commandBuffers[0][_currentFrame]->begin(framebuffer, &scissorViewportInheritance);
+            _commandBuffers[0][_currentFrame].begin(framebuffer, &scissorViewportInheritance);
         }
         else {
-            _commandBuffers[0][_currentFrame]->begin(framebuffer, nullptr);
+            _commandBuffers[0][_currentFrame].begin(framebuffer, nullptr);
             vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
             vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
         }
@@ -547,13 +552,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     futures[1] = std::async(std::launch::async, [&]() {
         // Skybox
-        const VkCommandBuffer commandBuffer = _commandBuffers[1][_currentFrame]->getVkCommandBuffer();
+        const VkCommandBuffer commandBuffer = _commandBuffers[1][_currentFrame].getVkCommandBuffer();
 
         if (viewportScissorInheritance) [[likely]] {
-            _commandBuffers[1][_currentFrame]->begin(framebuffer, &scissorViewportInheritance);
+            _commandBuffers[1][_currentFrame].begin(framebuffer, &scissorViewportInheritance);
         }
         else {
-            _commandBuffers[1][_currentFrame]->begin(framebuffer, nullptr);
+            _commandBuffers[1][_currentFrame].begin(framebuffer, nullptr);
             vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
             vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
         }
@@ -579,7 +584,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     futures[0].wait();
     futures[1].wait();
 
-    primaryCommandBuffer.executeSecondaryCommandBuffers({ _commandBuffers[0][_currentFrame]->getVkCommandBuffer(), _commandBuffers[1][_currentFrame]->getVkCommandBuffer()});
+    primaryCommandBuffer.executeSecondaryCommandBuffers({ _commandBuffers[0][_currentFrame].getVkCommandBuffer(), _commandBuffers[1][_currentFrame].getVkCommandBuffer()});
     primaryCommandBuffer.endRenderPass();
 
     if (primaryCommandBuffer.end() != VK_SUCCESS) {
@@ -597,7 +602,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer, uint3
     //}
 
     VkExtent2D extent = _shadowMap.getVkExtent2D();
-    const auto& clearValues = _shadowRenderPass->getAttachmentsLayout().getVkClearValues();
+    std::span<const VkClearValue> clearValues = _shadowRenderPass->getAttachmentsLayout().getVkClearValues();
     const VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = _shadowRenderPass->getVkRenderPass(),

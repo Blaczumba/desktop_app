@@ -31,6 +31,9 @@
 #include <unordered_map>
 
 class Application {
+    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
+    static constexpr uint32_t MAX_THREADS_IN_POOL = 2;
+
     std::unique_ptr<Instance> _instance;
 #ifdef VALIDATION_LAYERS_ENABLED
     std::unique_ptr<DebugMessenger> _debugMessenger;
@@ -95,18 +98,16 @@ class Application {
 
     std::unique_ptr<FPSCamera> _camera;
 
-    std::vector<std::shared_ptr<CommandPool>> _commandPool;
-    std::vector<std::unique_ptr<PrimaryCommandBuffer>> _primaryCommandBuffer;
-    std::vector<std::vector<std::unique_ptr<SecondaryCommandBuffer>>> _commandBuffers;
+    std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1> _commandPools;
+    std::vector<PrimaryCommandBuffer> _primaryCommandBuffer;
+    std::array<std::vector<SecondaryCommandBuffer>, MAX_THREADS_IN_POOL> _commandBuffers;
 
-    std::vector<VkSemaphore> _shadowMapSemaphores;
-    std::vector<VkSemaphore> _imageAvailableSemaphores;
-    std::vector<VkSemaphore> _renderFinishedSemaphores;
-    std::vector<VkFence> _inFlightFences;
+    // std::vector<VkSemaphore> _shadowMapSemaphores;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _imageAvailableSemaphores;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _renderFinishedSemaphores;
+    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> _inFlightFences;
 
     uint32_t _currentFrame = 0;
-    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
-    static constexpr uint32_t MAX_THREADS_IN_POOL = 2;
 
     float _mouseXOffset;
     float _mouseYOffset;
@@ -125,7 +126,7 @@ private:
     void setInput();
     void draw();
     Status createCommandBuffers();
-    void createSyncObjects();
+    Status createSyncObjects();
     void updateUniformBuffer(uint32_t currentImage);
     void recordCommandBuffer(uint32_t imageIndex);
     void recordOctreeSecondaryCommandBuffer(const VkCommandBuffer commandBuffer, const OctreeNode* node, const std::array<glm::vec4, NUM_CUBE_FACES>& planes);
