@@ -1,24 +1,24 @@
 #include "application.h"
 
-#include "bejzak_engine/sources/lib/buffer/shared_buffer.h"
-#include "bejzak_engine/sources/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
-#include "bejzak_engine/sources/entity_component_system/system/movement_system.h"
-#include "bejzak_engine/sources/entity_component_system/component/material.h"
-#include "bejzak_engine/sources/entity_component_system/component/mesh.h"
-#include "bejzak_engine/sources/entity_component_system/component/position.h"
-#include "bejzak_engine/sources/entity_component_system/component/transform.h"
-#include "bejzak_engine/sources/entity_component_system/component/velocity.h"
-#include "bejzak_engine/sources/pipeline/shader_program.h"
-#include "bejzak_engine/sources/primitives/vertex_builder.h"
-#include "bejzak_engine/sources/render_pass/attachment_layout.h"
-#include "bejzak_engine/sources/status/status.h"
-#include "bejzak_engine/sources/thread_pool/thread_pool.h"
-#include "bejzak_engine/sources/window/window_glfw.h"
+#include "bejzak_engine/common/window/window_glfw.h"
+#include "bejzak_engine/vulkan_wrapper/lib/buffer/shared_buffer.h"
+#include "bejzak_engine/vulkan_wrapper/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/system/movement_system.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/material.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/mesh.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/position.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/transform.h"
+#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/velocity.h"
+#include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
+#include "bejzak_engine/vulkan_wrapper/primitives/vertex_builder.h"
+#include "bejzak_engine/vulkan_wrapper/render_pass/attachment_layout.h"
+#include "bejzak_engine/vulkan_wrapper/status/status.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <print>
+#include <queue>
 
 Application::Application() {
     if (Status status = init(); !status) {
@@ -83,8 +83,8 @@ uint32_t getIndexSize(VkIndexType type) {
 }
 
 Status Application::init() {
-    ASSIGN_OR_RETURN(_window, Window::createWindow("Bejzak Engine", 1920, 1080));
-    std::vector<const char*>requiredExtensions = _window->getExtensions();
+	_window = std::unique_ptr<Window>(new WindowGlfw("Bejzak Engine", 1920, 1080));
+    std::vector<const char*>requiredExtensions = _window->getVulkanExtensions();
 #ifdef VALIDATION_LAYERS_ENABLED
     requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif // VALIDATION_LAYERS_ENABLED
@@ -95,7 +95,7 @@ Status Application::init() {
     ASSIGN_OR_RETURN(_debugMessenger, DebugMessenger::create(*_instance));
 #endif // VALIDATION_LAYERS_ENABLED
 
-    ASSIGN_OR_RETURN(_surface, _window->createSurface(*_instance));
+    ASSIGN_OR_RETURN(_surface, Surface::create(*_instance, _window.get()));
     ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(*_surface));
     ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
     _programManager = std::make_unique<ShaderProgramManager>(*_logicalDevice);
@@ -657,7 +657,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer, uint3
 }
 
 Status Application::recreateSwapChain() {
-    VkExtent2D extent{};
+    Extent2D extent{};
     while (extent.width == 0 || extent.height == 0) {
         extent = _window->getFramebufferSize();
     }
