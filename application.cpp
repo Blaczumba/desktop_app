@@ -1,7 +1,7 @@
 #include "application.h"
 
 #include "bejzak_engine/common/window/window_glfw.h"
-#include "bejzak_engine/vulkan_wrapper/lib/buffer/shared_buffer.h"
+#include "bejzak_engine/lib/buffer/shared_buffer.h"
 #include "bejzak_engine/vulkan_wrapper/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/vulkan_wrapper/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/vulkan_wrapper/entity_component_system/component/material.h"
