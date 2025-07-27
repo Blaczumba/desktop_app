@@ -1,6 +1,10 @@
 #pragma once
 
-#include "bejzak_engine/vulkan_wrapper/camera/fps_camera.h"
+#include "bejzak_engine/common/camera/fps_camera.h"
+#include "bejzak_engine/common/entity_component_system/system/movement_system.h"
+#include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
+#include "bejzak_engine/common/status/status.h"
+#include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/vulkan_wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan_wrapper/debug_messenger/debug_messenger.h"
 #include "bejzak_engine/vulkan_wrapper/descriptor_set/bindless_descriptor_set_writer.h"
@@ -8,7 +12,6 @@
 #include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set.h"
 #include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set_layout.h"
 #include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set_writer.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/vulkan_wrapper/framebuffer/framebuffer.h"
 #include "bejzak_engine/vulkan_wrapper/instance/instance.h"
 #include "bejzak_engine/vulkan_wrapper/logical_device/logical_device.h"
@@ -22,9 +25,7 @@
 #include "bejzak_engine/vulkan_wrapper/render_pass/render_pass.h"
 #include "bejzak_engine/vulkan_wrapper/resource_manager/asset_manager.h"
 #include "bejzak_engine/vulkan_wrapper/scene/octree.h"
-#include "bejzak_engine/vulkan_wrapper/status/status.h"
 #include "bejzak_engine/vulkan_wrapper/swapchain/swapchain.h"
-#include "bejzak_engine/common/window/window.h"
 
 #include <unordered_map>
 
@@ -36,7 +37,8 @@ class Application {
 #ifdef VALIDATION_LAYERS_ENABLED
     std::unique_ptr<DebugMessenger> _debugMessenger;
 #endif // VALIDATION_LAYERS_ENABLED
-    std::unique_ptr<Window> _window;
+    std::shared_ptr<Window> _window;
+    std::unique_ptr<const MouseKeyboardManager> _mouseKeyboardManager;
     std::unique_ptr<Surface> _surface;
     std::unique_ptr<PhysicalDevice> _physicalDevice;
     std::unique_ptr<LogicalDevice> _logicalDevice;

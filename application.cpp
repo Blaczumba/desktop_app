@@ -1,24 +1,71 @@
 #include "application.h"
 
+#include "bejzak_engine/common/entity_component_system/system/movement_system.h"
+#include "bejzak_engine/common/entity_component_system/component/material.h"
+#include "bejzak_engine/common/entity_component_system/component/mesh.h"
+#include "bejzak_engine/common/entity_component_system/component/position.h"
+#include "bejzak_engine/common/entity_component_system/component/transform.h"
+#include "bejzak_engine/common/entity_component_system/component/velocity.h"
+#include "bejzak_engine/common/status/status.h"
+#include "bejzak_engine/common/util/vertex_builder.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/lib/buffer/shared_buffer.h"
 #include "bejzak_engine/vulkan_wrapper/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/system/movement_system.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/material.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/mesh.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/position.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/transform.h"
-#include "bejzak_engine/vulkan_wrapper/entity_component_system/component/velocity.h"
 #include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
-#include "bejzak_engine/vulkan_wrapper/primitives/vertex_builder.h"
 #include "bejzak_engine/vulkan_wrapper/render_pass/attachment_layout.h"
-#include "bejzak_engine/vulkan_wrapper/status/status.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <print>
 #include <queue>
+
+constexpr std::string_view engineErrorToString(EngineError error) {
+    switch (error) {
+    case EngineError::INDEX_OUT_OF_RANGE: return "Index out of range";
+    case EngineError::EMPTY_COLLECTION: return "Empty collection";
+    case EngineError::SIZE_MISMATCH: return "Size mismatch";
+    case EngineError::NOT_RECOGNIZED_TYPE: return "Not recognized type";
+    case EngineError::NOT_FOUND: return "Not found";
+    case EngineError::NOT_MAPPED: return "Not mapped";
+    case EngineError::RESOURCE_EXHAUSTED: return "Resource exhausted";
+    case EngineError::LOAD_FAILURE: return "Load failure";
+    case EngineError::FLAG_NOT_SPECIFIED: return "Flag not specified";
+    }
+    return "Unknown EngineError";
+}
+
+constexpr std::string_view vkResultToString(int result) {
+    switch (result) {
+    case VK_SUCCESS: return "VK_SUCCESS";
+    case VK_NOT_READY: return "VK_NOT_READY";
+    case VK_TIMEOUT: return "VK_TIMEOUT";
+    case VK_EVENT_SET: return "VK_EVENT_SET";
+    case VK_EVENT_RESET: return "VK_EVENT_RESET";
+    case VK_INCOMPLETE: return "VK_INCOMPLETE";
+    case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+    case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+    case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+    case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+    case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
+    case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
+    case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
+    case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
+    case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
+    case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
+    case VK_ERROR_FORMAT_NOT_SUPPORTED: return "VK_ERROR_FORMAT_NOT_SUPPORTED";
+    }
+    return "Unknown VkResult error code";
+}
+
+std::string_view errorToString(const ErrorType& error) {
+    if (std::holds_alternative<int>(error)) {
+        return vkResultToString(std::get<int>(error));
+    }
+    else {
+        return engineErrorToString(std::get<EngineError>(error));
+    }
+}
 
 Application::Application() {
     if (Status status = init(); !status) {
@@ -28,11 +75,11 @@ Application::Application() {
     _assetManager = std::make_unique<AssetManager>(*_logicalDevice);
 
     if (Status status = createDescriptorSets(); !status) {
-		std::println("Failed to create descriptor sets: {}", errorToString(status.error()));
+        std::println("Failed to create descriptor sets: {}", errorToString(status.error()));
     }
 
     if (Status status = loadObjects(); !status) {
-		std::println("Failed to load objects: {}", errorToString(status.error()));
+        std::println("Failed to load objects: {}", errorToString(status.error()));
     }
     
     if (Status status = loadCubemap(); !status) {
@@ -40,7 +87,7 @@ Application::Application() {
     }
 
 	if (Status status = createPresentResources(); !status) {
-		std::println("Failed to create present resources: {}", errorToString(status.error()));
+        std::println("Failed to create present resources: {}", errorToString(status.error()));
 	}
     
     if (Status status = createShadowResources(); !status) {
@@ -48,11 +95,11 @@ Application::Application() {
 	}
 
     if (Status status = createCommandBuffers(); !status) {
-		std::println("Failed to create command buffers: {}", errorToString(status.error()));
+        // std::println("Failed to create command buffers: {}", errorToString(status.error()));
     }
 
     if (Status status = createSyncObjects(); !status) {
-		std::println("Failed to create sync objects: {}", errorToString(status.error()));
+        // std::println("Failed to create sync objects: {}", errorToString(status.error()));
     }
     _camera = std::make_unique<FPSCamera>(glm::radians(45.0f), 1920.0f / 1080.0f, 0.01f, 100.0f);
     setInput();
@@ -83,7 +130,8 @@ uint32_t getIndexSize(VkIndexType type) {
 }
 
 Status Application::init() {
-	_window = std::unique_ptr<Window>(new WindowGlfw("Bejzak Engine", 1920, 1080));
+	_window = std::make_unique<WindowGlfw>("Bejzak Engine", 1920, 1080);
+    _mouseKeyboardManager = _window->createMouseKeyboardManager();
     std::vector<const char*>requiredExtensions = _window->getVulkanExtensions();
 #ifdef VALIDATION_LAYERS_ENABLED
     requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -104,13 +152,12 @@ Status Application::init() {
 }
 
 void Application::setInput() {
-    const MouseKeyboardManager* manager = _window->getMouseKeyboardManager();
-    if (manager == nullptr) {
+    if (_mouseKeyboardManager == nullptr) {
         return;
     }
     // manager->absorbCursor();
 
-    manager->setKeyboardCallback([&](Keyboard::Key key, int action) {
+    _mouseKeyboardManager->setKeyboardCallback([&](Keyboard::Key key, int action) {
         switch (key) {
         case Keyboard::Key::Escape:
             _window->close();
@@ -118,7 +165,7 @@ void Application::setInput() {
         }
     });
 
-    manager->setMouseMoveCallback([&](float xPosIn, float yPosIn) {
+    _mouseKeyboardManager->setMouseMoveCallback([&](float xPosIn, float yPosIn) {
         static float lastX = xPosIn;
         static float lastY = yPosIn;
 
@@ -350,7 +397,7 @@ void Application::run() {
         std::println("{}", 1.0f / deltaTime);
         previous = std::chrono::steady_clock::now();
         _window->pollEvents();
-        _camera->updateInput(*_window->getMouseKeyboardManager(), _mouseXOffset, _mouseYOffset, deltaTime);
+        _camera->updateInput(*_mouseKeyboardManager, _mouseXOffset, _mouseYOffset, deltaTime);
         _mouseXOffset = _mouseYOffset = 0.0f;
         draw();
     }
