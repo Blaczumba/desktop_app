@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include "bejzak_engine/common/camera/camera_impl.h"
+#include "bejzak_engine/common/camera/perspective_projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/entity_component_system/component/material.h"
 #include "bejzak_engine/common/entity_component_system/component/mesh.h"
@@ -101,32 +103,9 @@ Application::Application() {
     if (Status status = createSyncObjects(); !status) {
         // std::println("Failed to create sync objects: {}", errorToString(status.error()));
     }
-    _camera = std::make_unique<FPSCamera>(glm::radians(45.0f), 1920.0f / 1080.0f, 0.01f, 100.0f);
+    _projection = std::make_unique<PerspectiveProjection>(glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f);
+    _camera = std::make_unique<CameraImpl>(_projection, glm::vec3(0.0f), 5.5f, 0.01f);
     setInput();
-}
-
-VkIndexType getIndexType(uint32_t stride) {
-    switch (stride) {
-    case 1:
-        return VK_INDEX_TYPE_UINT8_EXT;
-    case 2:
-        return VK_INDEX_TYPE_UINT16;
-    case 4:
-        return VK_INDEX_TYPE_UINT32;
-    }
-    return VK_INDEX_TYPE_NONE_KHR;
-}
-
-uint32_t getIndexSize(VkIndexType type) {
-    switch (type) {
-    case VK_INDEX_TYPE_UINT8_EXT:
-        return 1;
-    case VK_INDEX_TYPE_UINT16:
-        return 2;
-    case VK_INDEX_TYPE_UINT32:
-        return 4;
-    }
-    return 0;
 }
 
 Status Application::init() {
@@ -397,7 +376,7 @@ void Application::run() {
         std::println("{}", 1.0f / deltaTime);
         previous = std::chrono::steady_clock::now();
         _window->pollEvents();
-        _camera->updateInput(*_mouseKeyboardManager, _mouseXOffset, _mouseYOffset, deltaTime);
+        _camera->updateFromKeyboard(*_mouseKeyboardManager, _mouseXOffset, _mouseYOffset, deltaTime);
         _mouseXOffset = _mouseYOffset = 0.0f;
         draw();
     }
@@ -709,7 +688,7 @@ Status Application::recreateSwapChain() {
         extent = _window->getFramebufferSize();
     }
 
-    _camera->setAspectRatio(static_cast<float>(extent.width) / extent.height);
+    _projection->setAspectRatio(static_cast<float>(extent.width) / extent.height);
     vkDeviceWaitIdle(_logicalDevice->getVkDevice());
 
     ASSIGN_OR_RETURN(_swapchain, Swapchain::create(*_logicalDevice, _swapchain->getVkSwapchain()));
