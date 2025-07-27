@@ -1,6 +1,6 @@
 #include "application.h"
 
-#include "bejzak_engine/common/camera/camera_impl.h"
+#include "bejzak_engine/common/camera/camera.h"
 #include "bejzak_engine/common/camera/perspective_projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/entity_component_system/component/material.h"
@@ -69,7 +69,8 @@ std::string_view errorToString(const ErrorType& error) {
     }
 }
 
-Application::Application() {
+Application::Application() : _projection(std::make_shared<PerspectiveProjection>(glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f)),
+    _camera(_projection, glm::vec3(0.0f), 5.5f, 0.01f) {
     if (Status status = init(); !status) {
 		std::println("Failed to initialize application: {}", errorToString(status.error()));
 	}
@@ -97,14 +98,12 @@ Application::Application() {
 	}
 
     if (Status status = createCommandBuffers(); !status) {
-        // std::println("Failed to create command buffers: {}", errorToString(status.error()));
+        std::println("Failed to create command buffers: {}", errorToString(status.error()));
     }
 
     if (Status status = createSyncObjects(); !status) {
-        // std::println("Failed to create sync objects: {}", errorToString(status.error()));
+        std::println("Failed to create sync objects: {}", errorToString(status.error()));
     }
-    _projection = std::make_unique<PerspectiveProjection>(glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f);
-    _camera = std::make_unique<CameraImpl>(_projection, glm::vec3(0.0f), 5.5f, 0.01f);
     setInput();
 }
 
@@ -142,17 +141,6 @@ void Application::setInput() {
             _window->close();
             break;
         }
-    });
-
-    _mouseKeyboardManager->setMouseMoveCallback([&](float xPosIn, float yPosIn) {
-        static float lastX = xPosIn;
-        static float lastY = yPosIn;
-
-        _mouseXOffset = xPosIn - lastX;
-        _mouseYOffset = lastY - yPosIn; // reversed since y-coordinates go from bottom to top
-
-        lastX = xPosIn;
-        lastY = yPosIn;
     });
 }
 
@@ -376,8 +364,7 @@ void Application::run() {
         std::println("{}", 1.0f / deltaTime);
         previous = std::chrono::steady_clock::now();
         _window->pollEvents();
-        _camera->updateFromKeyboard(*_mouseKeyboardManager, _mouseXOffset, _mouseYOffset, deltaTime);
-        _mouseXOffset = _mouseYOffset = 0.0f;
+        _camera.updateFromKeyboard(*_mouseKeyboardManager, deltaTime);
         draw();
     }
     vkDeviceWaitIdle(_logicalDevice->getVkDevice());
@@ -466,9 +453,9 @@ Status Application::createSyncObjects() {
 }
 
 void Application::updateUniformBuffer(uint32_t currentFrame) {
-    _ubCamera.view = _camera->getViewMatrix();
-    _ubCamera.proj = _camera->getProjectionMatrix();
-    _ubCamera.pos = _camera->getPosition();
+    _ubCamera.view = _camera.getViewMatrix();
+    _ubCamera.proj = _camera.getProjectionMatrix();
+    _ubCamera.pos = _camera.getPosition();
     _dynamicUniformBuffersCamera.copyData(_ubCamera, currentFrame * _physicalDevice->getMemoryAlignment(sizeof(UniformBufferCamera)));
 }
 
@@ -570,7 +557,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindPipeline(commandBuffer, _graphicsPipeline->getVkPipelineBindPoint(), _graphicsPipeline->getVkPipeline());
 
         const OctreeNode* root = _octree->getRoot();
-        const auto& planes = extractFrustumPlanes(_camera->getProjectionMatrix() * _camera->getViewMatrix());
+        const auto& planes = extractFrustumPlanes(_camera.getProjectionMatrix() * _camera.getViewMatrix());
         recordOctreeSecondaryCommandBuffer(commandBuffer, root, planes);
 
         vkEndCommandBuffer(commandBuffer);
@@ -595,8 +582,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0, _indexBufferCubeType);
 
         const PushConstantsSkybox pc = {
-                .proj = _camera->getProjectionMatrix(),
-                .view = _camera->getViewMatrix(),
+                .proj = _camera.getProjectionMatrix(),
+                .view = _camera.getViewMatrix(),
                 .skyboxHandle = static_cast<uint32_t>(_skyboxHandle)
         };
         vkCmdPushConstants(commandBuffer, _graphicsPipelineSkybox->getVkPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);

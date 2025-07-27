@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bejzak_engine/common/camera/camera_impl.h"
+#include "bejzak_engine/common/camera/camera.h"
 #include "bejzak_engine/common/camera/perspective_projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
@@ -97,8 +97,8 @@ class Application {
     Buffer _lightBuffer;
     BufferHandle _lightHandle;
 
-    std::unique_ptr<CameraImpl> _camera;
 	std::shared_ptr<PerspectiveProjection> _projection;
+    Camera _camera;
 
     std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1> _commandPools;
     std::vector<PrimaryCommandBuffer> _primaryCommandBuffer;
@@ -110,9 +110,6 @@ class Application {
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> _inFlightFences;
 
     uint32_t _currentFrame = 0;
-
-    float _mouseXOffset;
-    float _mouseYOffset;
 
 public:
     Application();
