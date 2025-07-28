@@ -5,6 +5,7 @@
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
 #include "bejzak_engine/common/object/object.h"
+#include "bejzak_engine/common/scene/octree.h"
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/vulkan_wrapper/command_buffer/command_buffer.h"
@@ -25,7 +26,6 @@
 #include "bejzak_engine/vulkan_wrapper/physical_device/physical_device.h"
 #include "bejzak_engine/vulkan_wrapper/render_pass/render_pass.h"
 #include "bejzak_engine/vulkan_wrapper/resource_manager/asset_manager.h"
-#include "bejzak_engine/vulkan_wrapper/scene/octree.h"
 #include "bejzak_engine/vulkan_wrapper/swapchain/swapchain.h"
 
 #include <unordered_map>
