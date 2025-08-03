@@ -40,10 +40,10 @@ class Application {
 #endif // VALIDATION_LAYERS_ENABLED
     std::shared_ptr<Window> _window;
     std::unique_ptr<const MouseKeyboardManager> _mouseKeyboardManager;
-    std::unique_ptr<Surface> _surface;
+    Surface _surface;
     std::unique_ptr<PhysicalDevice> _physicalDevice;
     std::unique_ptr<LogicalDevice> _logicalDevice;
-    std::unique_ptr<Swapchain> _swapchain;
+    Swapchain _swapchain;
     std::unique_ptr<CommandPool> _singleTimeCommandPool;
     std::unique_ptr<ShaderProgramManager> _programManager;
 

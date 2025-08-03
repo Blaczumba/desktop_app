@@ -121,12 +121,15 @@ Status Application::init() {
     ASSIGN_OR_RETURN(_debugMessenger, DebugMessenger::create(*_instance));
 #endif // VALIDATION_LAYERS_ENABLED
 
-    ASSIGN_OR_RETURN(_surface, Surface::create(*_instance, _window.get()));
-    ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(*_surface));
+    ASSIGN_OR_RETURN(_surface, Surface::create(*_instance, *_window));
+    ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(_surface));
     ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
     _programManager = std::make_unique<ShaderProgramManager>(*_logicalDevice);
-    ASSIGN_OR_RETURN(_swapchain, Swapchain::create(*_logicalDevice));
+	const Extent2D framebufferSize = _window->getFramebufferSize();
+    ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
+        .build(*_logicalDevice, VkExtent2D{ framebufferSize.width, framebufferSize.height }));
     ASSIGN_OR_RETURN(_singleTimeCommandPool, CommandPool::create(*_logicalDevice));
+	return StatusOk();
 }
 
 void Application::setInput() {
@@ -277,7 +280,7 @@ Status Application::createDescriptorSets() {
 
 Status Application::createPresentResources() {
     const VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
-    const VkFormat swapchainImageFormat = _swapchain->getVkFormat();
+    const VkFormat swapchainImageFormat = _swapchain.getVkFormat();
 
     AttachmentLayout attachmentsLayout(msaaSamples);
     attachmentsLayout.addColorResolvePresentAttachment(swapchainImageFormat, VK_ATTACHMENT_LOAD_OP_DONT_CARE)
@@ -300,8 +303,8 @@ Status Application::createPresentResources() {
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-        for (uint8_t i = 0; i < _swapchain->getImagesCount(); ++i) {
-            ASSIGN_OR_RETURN(auto framebuffer, Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain->getExtent(), _swapchain->getSwapchainVkImageView(i), _attachments));
+        for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
+            ASSIGN_OR_RETURN(auto framebuffer, Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
             _framebuffers.push_back(std::move(framebuffer));
         }
     }
@@ -374,7 +377,7 @@ void Application::draw() {
     VkDevice device = _logicalDevice->getVkDevice();
     vkWaitForFences(device, 1, &_inFlightFences[_currentFrame], VK_TRUE, UINT64_MAX);
     uint32_t imageIndex;
-    VkResult result = _swapchain->acquireNextImage(_imageAvailableSemaphores[_currentFrame], &imageIndex);
+    VkResult result = _swapchain.acquireNextImage(_imageAvailableSemaphores[_currentFrame], &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
@@ -414,7 +417,7 @@ void Application::draw() {
     if (vkQueueSubmit(_logicalDevice->getGraphicsVkQueue(), 1, &submitInfo, _inFlightFences[_currentFrame]) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
-    result = _swapchain->present(imageIndex, signalSemaphores[0]);
+    result = _swapchain.present(imageIndex, signalSemaphores[0]);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         recreateSwapChain();
@@ -678,13 +681,15 @@ Status Application::recreateSwapChain() {
     _projection->setAspectRatio(static_cast<float>(extent.width) / extent.height);
     vkDeviceWaitIdle(_logicalDevice->getVkDevice());
 
-    ASSIGN_OR_RETURN(_swapchain, Swapchain::create(*_logicalDevice, _swapchain->getVkSwapchain()));
+    ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
+        .withOldSwapchain(_swapchain.getVkSwapchain())
+        .build(*_logicalDevice, VkExtent2D{ extent.width, extent.height }));
     _attachments.clear();
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-        for (uint8_t i = 0; i < _swapchain->getImagesCount(); ++i) {
-            ASSIGN_OR_RETURN(_framebuffers[i], Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain->getExtent(), _swapchain->getSwapchainVkImageView(i), _attachments));
+        for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
+            ASSIGN_OR_RETURN(_framebuffers[i], Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
         }
     }
     return StatusOk();
