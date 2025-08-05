@@ -127,6 +127,7 @@ Status Application::init() {
     _programManager = std::make_unique<ShaderProgramManager>(*_logicalDevice);
 	const Extent2D framebufferSize = _window->getFramebufferSize();
     ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
+		.withPreferredPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)
         .build(*_logicalDevice, VkExtent2D{ framebufferSize.width, framebufferSize.height }));
     ASSIGN_OR_RETURN(_singleTimeCommandPool, CommandPool::create(*_logicalDevice));
 	return StatusOk();
@@ -136,7 +137,7 @@ void Application::setInput() {
     if (_mouseKeyboardManager == nullptr) {
         return;
     }
-    // manager->absorbCursor();
+    _mouseKeyboardManager->absorbCursor();
 
     _mouseKeyboardManager->setKeyboardCallback([&](Keyboard::Key key, int action) {
         switch (key) {
