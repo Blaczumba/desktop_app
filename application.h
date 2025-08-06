@@ -45,7 +45,7 @@ class Application {
     LogicalDevice _logicalDevice;
     Swapchain _swapchain;
     std::unique_ptr<CommandPool> _singleTimeCommandPool;
-    std::unique_ptr<ShaderProgramManager> _programManager;
+    std::unique_ptr<ShaderProgramManager> _programManager;  // Does not have to be unique_ptr
 
     uint32_t index = 0;
     std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
@@ -55,16 +55,16 @@ class Application {
     std::vector<Object> _objects;
     std::unique_ptr<Octree> _octree;
     Registry _registry;
-    std::unique_ptr<AssetManager> _assetManager;
-    std::shared_ptr<Renderpass> _renderPass;
-    std::vector<std::unique_ptr<Framebuffer>> _framebuffers;
+    std::unique_ptr<AssetManager> _assetManager;    // Does not have to be unique_ptr
+    std::shared_ptr<Renderpass> _renderPass;    // Does not have to be unique_ptr
+    std::vector<std::unique_ptr<Framebuffer>> _framebuffers;    // Does not have to be unique_ptr
     std::vector<Texture> _attachments;
 
     // Shadowmap
-    std::shared_ptr<Renderpass> _shadowRenderPass;
-    std::unique_ptr<Framebuffer> _shadowFramebuffer;
+    std::shared_ptr<Renderpass> _shadowRenderPass;  // Does not have to be unique_ptr
+    std::unique_ptr<Framebuffer> _shadowFramebuffer;    // Does not have to be unique_ptr
     Texture _shadowMap;
-    std::unique_ptr<GraphicsPipeline> _shadowPipeline;
+    std::unique_ptr<GraphicsPipeline> _shadowPipeline;  // Does not have to be unique_ptr
     TextureHandle _shadowHandle;
 
     // Cubemap.
@@ -72,17 +72,17 @@ class Application {
     Buffer _indexBufferCube;
     Texture _textureCubemap;
     VkIndexType _indexBufferCubeType;
-    std::unique_ptr<GraphicsPipeline> _graphicsPipelineSkybox;
+    std::unique_ptr<GraphicsPipeline> _graphicsPipelineSkybox;  // Does not have to be unique_ptr
     std::shared_ptr<DescriptorPool> _descriptorPoolSkybox;
-    std::unique_ptr<ShaderProgram> _skyboxShaderProgram;
+    std::unique_ptr<ShaderProgram> _skyboxShaderProgram;    // Does not have to be unique_ptr
     TextureHandle _skyboxHandle;
 
     // PBR objects.
     std::vector<Object> objects;
     std::shared_ptr<DescriptorPool> _descriptorPool;
     std::shared_ptr<DescriptorPool> _dynamicDescriptorPool;
-    std::unique_ptr<ShaderProgram> _pbrShaderProgram;
-    std::unique_ptr<GraphicsPipeline> _graphicsPipeline;
+    std::unique_ptr<ShaderProgram> _pbrShaderProgram;   // Does not have to be unique_ptr
+    std::unique_ptr<GraphicsPipeline> _graphicsPipeline;    // Does not have to be unique_ptr
     UniformBufferCamera _ubCamera;
     UniformBufferLight _ubLight;
 
@@ -90,8 +90,8 @@ class Application {
     Buffer _dynamicUniformBuffersCamera;
     DescriptorSet _dynamicDescriptorSet;
 
-    std::unique_ptr<ShaderProgram> _shadowShaderProgram;
-    std::unique_ptr<BindlessDescriptorSetWriter> _bindlessWriter;
+    std::unique_ptr<ShaderProgram> _shadowShaderProgram;    // Does not have to be unique_ptr
+    std::unique_ptr<BindlessDescriptorSetWriter> _bindlessWriter;   // Does not have to be unique_ptr
 
     DescriptorSet _bindlessDescriptorSet;
     Buffer _lightBuffer;
@@ -102,9 +102,8 @@ class Application {
 
     std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1> _commandPools;
     std::vector<PrimaryCommandBuffer> _primaryCommandBuffer;
-    std::array<std::vector<SecondaryCommandBuffer>, MAX_THREADS_IN_POOL> _commandBuffers;
+    std::array<std::array<SecondaryCommandBuffer, MAX_FRAMES_IN_FLIGHT>, MAX_THREADS_IN_POOL> _commandBuffers;
 
-    // std::vector<VkSemaphore> _shadowMapSemaphores;
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _imageAvailableSemaphores;
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _renderFinishedSemaphores;
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> _inFlightFences;

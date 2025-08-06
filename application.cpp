@@ -507,7 +507,7 @@ Status Application::createCommandBuffers() {
     }
 	ASSIGN_OR_RETURN(_primaryCommandBuffer, _commandPools[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
     for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
-		ASSIGN_OR_RETURN(_commandBuffers[i], _commandPools[i]->createSecondaryCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+		ASSIGN_OR_RETURN(_commandBuffers[i], _commandPools[i]->createSecondaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
     }
 }
 
