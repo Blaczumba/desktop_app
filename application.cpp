@@ -48,6 +48,18 @@ ErrorOr<Texture> createShadowmap(const LogicalDevice& logicalDevice, VkCommandBu
         .buildImageSampler(logicalDevice, commandBuffer);
 }
 
+ErrorOr<Texture> createTexture2D(const LogicalDevice& logicalDevice, VkCommandBuffer commandBuffer, VkBuffer stagingBuffer, const ImageDimensions& dimensions, VkFormat format, float samplerAnisotropy) {
+    return TextureBuilder()
+        .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
+        .withExtent(dimensions.width, dimensions.height)
+        .withFormat(format)
+        .withMipLevels(dimensions.mipLevels)
+        .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+        .withMaxAnisotropy(samplerAnisotropy)
+        .withMaxLod(static_cast<float>(dimensions.mipLevels))
+        .buildMipmapImage(logicalDevice, commandBuffer, stagingBuffer, dimensions.copyRegions);
+}
+
 constexpr std::string_view engineErrorToString(EngineError error) {
     switch (error) {
     case EngineError::INDEX_OUT_OF_RANGE: return "Index out of range";
@@ -215,17 +227,17 @@ Status Application::loadObjects() {
             const std::string normalPath = MODELS_PATH "sponza/" + sceneData[i].normalTexture;
             if (!_textures.contains(diffusePath)) {
                 ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(diffusePath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(auto texture, createTexture2D(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy));
                 _textures.emplace(diffusePath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             if (!_textures.contains(normalPath)) {
                 ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(normalPath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(auto texture, createTexture2D(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
                 _textures.emplace(normalPath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             if (!_textures.contains(metallicRoughnessPath)) {
                 ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(metallicRoughnessPath));
-                ASSIGN_OR_RETURN(auto texture, Texture::create2DImage(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+                ASSIGN_OR_RETURN(auto texture, createTexture2D(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
                 _textures.emplace(metallicRoughnessPath, std::make_pair(_bindlessWriter->storeTexture(texture), std::move(texture)));
             }
             _objects.emplace_back("Object", e);
