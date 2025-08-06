@@ -34,15 +34,15 @@ class Application {
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
     static constexpr uint32_t MAX_THREADS_IN_POOL = 2;
 
-    std::unique_ptr<Instance> _instance;
+    Instance _instance;
 #ifdef VALIDATION_LAYERS_ENABLED
-    std::unique_ptr<DebugMessenger> _debugMessenger;
+    DebugMessenger _debugMessenger;
 #endif // VALIDATION_LAYERS_ENABLED
     std::shared_ptr<Window> _window;
     std::unique_ptr<const MouseKeyboardManager> _mouseKeyboardManager;
     Surface _surface;
     std::unique_ptr<PhysicalDevice> _physicalDevice;
-    std::unique_ptr<LogicalDevice> _logicalDevice;
+    LogicalDevice _logicalDevice;
     Swapchain _swapchain;
     std::unique_ptr<CommandPool> _singleTimeCommandPool;
     std::unique_ptr<ShaderProgramManager> _programManager;
