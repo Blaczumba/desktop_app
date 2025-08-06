@@ -22,6 +22,32 @@
 #include <print>
 #include <queue>
 
+ErrorOr<Texture> createCubemap(const LogicalDevice& logicalDevice, VkCommandBuffer commandBuffer, VkBuffer stagingBuffer, const ImageDimensions& dimensions, VkFormat format, float samplerAnisotropy) {
+    return TextureBuilder()
+        .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
+        .withExtent(dimensions.width, dimensions.height)
+        .withFormat(format)
+        .withMipLevels(dimensions.mipLevels)
+        .withUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+        .withLayerCount(6)
+        .withMaxAnisotropy(samplerAnisotropy)
+        .withMaxLod(static_cast<float>(dimensions.mipLevels))
+        .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        .buildImage(logicalDevice, commandBuffer, stagingBuffer, dimensions.copyRegions);
+}
+
+ErrorOr<Texture> createShadowmap(const LogicalDevice& logicalDevice, VkCommandBuffer commandBuffer, uint32_t width, uint32_t height, VkFormat format) {
+    return TextureBuilder()
+        .withAspect(VK_IMAGE_ASPECT_DEPTH_BIT)
+        .withExtent(width, height)
+        .withFormat(format)
+        .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+        .withAddressModes(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
+        .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
+        .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
+        .buildImageSampler(logicalDevice, commandBuffer);
+}
+
 constexpr std::string_view engineErrorToString(EngineError error) {
     switch (error) {
     case EngineError::INDEX_OUT_OF_RANGE: return "Index out of range";
@@ -243,8 +269,8 @@ Status Application::createDescriptorSets() {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
         ASSIGN_OR_RETURN(const AssetManager::ImageData& imgData, _assetManager->getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
-        ASSIGN_OR_RETURN(_textureCubemap, Texture::createCubemap(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
-        ASSIGN_OR_RETURN(_shadowMap, Texture::create2DShadowmap(*_logicalDevice, commandBuffer, 1024 * 2, 1024 * 2, VK_FORMAT_D32_SFLOAT));
+        ASSIGN_OR_RETURN(_textureCubemap, createCubemap(*_logicalDevice, commandBuffer, imgData.stagingBuffer.getVkBuffer(), imgData.imageDimensions, VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy));
+        ASSIGN_OR_RETURN(_shadowMap, createShadowmap(*_logicalDevice, commandBuffer, 1024 * 2, 1024 * 2, VK_FORMAT_D32_SFLOAT));
     }
 
     const uint32_t size = _logicalDevice->getPhysicalDevice().getMemoryAlignment(sizeof(UniformBufferCamera));
