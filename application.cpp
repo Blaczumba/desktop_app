@@ -162,7 +162,6 @@ Status Application::init() {
     ASSIGN_OR_RETURN(_surface, Surface::create(_instance, *_window));
     ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(_surface));
     ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
-    _programManager = std::make_unique<ShaderProgramManager>(_logicalDevice);
 	const Extent2D framebufferSize = _window->getFramebufferSize();
     ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
 		.withPreferredPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)
@@ -288,16 +287,16 @@ Status Application::createDescriptorSets() {
     const uint32_t size = _logicalDevice.getPhysicalDevice().getMemoryAlignment(sizeof(UniformBufferCamera));
     ASSIGN_OR_RETURN(_dynamicUniformBuffersCamera, Buffer::createUniformBuffer(_logicalDevice, MAX_FRAMES_IN_FLIGHT * size));
 
-    ASSIGN_OR_RETURN(_pbrShaderProgram, _programManager->createPBRProgram());
-    ASSIGN_OR_RETURN(_skyboxShaderProgram, _programManager->createSkyboxProgram());
-    ASSIGN_OR_RETURN(_shadowShaderProgram, _programManager->createShadowProgram());
+    ASSIGN_OR_RETURN(_pbrShaderProgram, _programManager.createPBRProgram(_logicalDevice));
+    ASSIGN_OR_RETURN(_skyboxShaderProgram, _programManager.createSkyboxProgram(_logicalDevice));
+    ASSIGN_OR_RETURN(_shadowShaderProgram, _programManager.createShadowProgram(_logicalDevice));
     
     ASSIGN_OR_RETURN(_descriptorPool, DescriptorPool::create(_logicalDevice, 150, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT));
     ASSIGN_OR_RETURN(_dynamicDescriptorPool, DescriptorPool::create(_logicalDevice, 1));
     ASSIGN_OR_RETURN(_descriptorPoolSkybox, DescriptorPool::create(_logicalDevice, 1));
 
-    ASSIGN_OR_RETURN(_bindlessDescriptorSet, _descriptorPool->createDesriptorSet(_programManager->getVkDescriptorSetLayout(DescriptorSetType::BINDLESS)));
-    ASSIGN_OR_RETURN(_dynamicDescriptorSet, _dynamicDescriptorPool->createDesriptorSet(_programManager->getVkDescriptorSetLayout(DescriptorSetType::CAMERA)));
+    ASSIGN_OR_RETURN(_bindlessDescriptorSet, _descriptorPool->createDesriptorSet(_programManager.getVkDescriptorSetLayout(DescriptorSetType::BINDLESS)));
+    ASSIGN_OR_RETURN(_dynamicDescriptorSet, _dynamicDescriptorPool->createDesriptorSet(_programManager.getVkDescriptorSetLayout(DescriptorSetType::CAMERA)));
     _bindlessWriter = std::make_unique<BindlessDescriptorSetWriter>(_bindlessDescriptorSet);
     _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
     _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);

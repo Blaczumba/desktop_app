@@ -45,7 +45,7 @@ class Application {
     LogicalDevice _logicalDevice;
     Swapchain _swapchain;
     std::unique_ptr<CommandPool> _singleTimeCommandPool;
-    std::unique_ptr<ShaderProgramManager> _programManager;  // Does not have to be unique_ptr
+    ShaderProgramManager _programManager;  // Does not have to be unique_ptr
 
     uint32_t index = 0;
     std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
