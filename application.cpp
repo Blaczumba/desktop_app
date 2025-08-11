@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <iostream>
 #include <print>
 #include <queue>
 
@@ -145,6 +146,17 @@ Application::Application() : _projection(std::make_shared<PerspectiveProjection>
     setInput();
 }
 
+VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+    std::cerr << "[Vulkan Validation] " << "Severity: " << messageSeverity << ", "
+        << "Type: " << messageType << std::endl
+        << "Message: " << pCallbackData->pMessage << std::endl;
+
+    return VK_FALSE;
+}
+
 Status Application::init() {
 	_window = std::make_unique<WindowGlfw>("Bejzak Engine", 1920, 1080);
     _mouseKeyboardManager = _window->createMouseKeyboardManager();
@@ -154,18 +166,18 @@ Status Application::init() {
 #endif // VALIDATION_LAYERS_ENABLED
     requiredExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 
-    ASSIGN_OR_RETURN(_instance, Instance::create("Bejzak Engine", requiredExtensions));
+    ASSIGN_OR_RETURN(_instance, Instance::create("Bejzak Engine", requiredExtensions, debugCallback));
 #ifdef VALIDATION_LAYERS_ENABLED
-    ASSIGN_OR_RETURN(_debugMessenger, DebugMessenger::create(_instance));
+    ASSIGN_OR_RETURN(_debugMessenger, DebugMessenger::create(_instance, debugCallback));
 #endif // VALIDATION_LAYERS_ENABLED
 
     ASSIGN_OR_RETURN(_surface, Surface::create(_instance, *_window));
-    ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(_surface));
+    ASSIGN_OR_RETURN(_physicalDevice, PhysicalDevice::create(_instance, _surface.getVkSurface()));
     ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
 	const Extent2D framebufferSize = _window->getFramebufferSize();
     ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
 		.withPreferredPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)
-        .build(_logicalDevice, VkExtent2D{ framebufferSize.width, framebufferSize.height }));
+        .build(_logicalDevice, _surface.getVkSurface(), VkExtent2D{ framebufferSize.width, framebufferSize.height }));
     ASSIGN_OR_RETURN(_singleTimeCommandPool, CommandPool::create(_logicalDevice));
 	return StatusOk();
 }
@@ -327,22 +339,22 @@ Status Application::createPresentResources() {
     //              .addColorAttachment(swapchainImageFormat, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
                     .addDepthAttachment(VK_FORMAT_D24_UNORM_S8_UINT, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
-    _renderPass = Renderpass::create(_logicalDevice, attachmentsLayout);
-    RETURN_IF_ERROR(_renderPass->addSubpass({0, 1, 2}));
-    _renderPass->addDependency(VK_SUBPASS_EXTERNAL,
+    _renderPass = Renderpass(_logicalDevice, attachmentsLayout);
+    RETURN_IF_ERROR(_renderPass.addSubpass({0, 1, 2}));
+    _renderPass.addDependency(VK_SUBPASS_EXTERNAL,
         0,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
     );
-    RETURN_IF_ERROR(_renderPass->build());
+    RETURN_IF_ERROR(_renderPass.build());
     
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
         for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
-            ASSIGN_OR_RETURN(auto framebuffer, Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
+            ASSIGN_OR_RETURN(auto framebuffer, Framebuffer::createFromSwapchain(commandBuffer, _renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
             _framebuffers.push_back(std::move(framebuffer));
         }
     }
@@ -351,14 +363,14 @@ Status Application::createPresentResources() {
             .msaaSamples = msaaSamples,
             // .patchControlPoints = 3,
         };
-        _graphicsPipeline = std::make_unique<GraphicsPipeline>(*_renderPass, *_pbrShaderProgram, parameters);
+        _graphicsPipeline = std::make_unique<GraphicsPipeline>(_renderPass, _pbrShaderProgram, parameters);
     }
     {
         const GraphicsPipelineParameters parameters = {
             .cullMode = VK_CULL_MODE_FRONT_BIT,
             .msaaSamples = msaaSamples
         };
-        _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(*_renderPass, *_skyboxShaderProgram, parameters);
+        _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(_renderPass, _skyboxShaderProgram, parameters);
     }
     return StatusOk();
 }
@@ -367,17 +379,17 @@ Status Application::createShadowResources() {
     AttachmentLayout attachmentLayout;
     attachmentLayout.addShadowAttachment(VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    _shadowRenderPass = Renderpass::create(_logicalDevice, attachmentLayout);
-    RETURN_IF_ERROR(_shadowRenderPass->addSubpass({0}));
-    RETURN_IF_ERROR(_shadowRenderPass->build());
-    ASSIGN_OR_RETURN(_shadowFramebuffer, Framebuffer::createFromTextures(*_shadowRenderPass, std::span(&_shadowMap, 1)));
+    _shadowRenderPass = Renderpass(_logicalDevice, attachmentLayout);
+    RETURN_IF_ERROR(_shadowRenderPass.addSubpass({0}));
+    RETURN_IF_ERROR(_shadowRenderPass.build());
+    ASSIGN_OR_RETURN(_shadowFramebuffer, Framebuffer::createFromTextures(_shadowRenderPass, std::span(&_shadowMap, 1)));
 
     const GraphicsPipelineParameters parameters = {
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .depthBiasConstantFactor = 0.7f,
         .depthBiasSlopeFactor = 2.0f,
     };
-    _shadowPipeline = std::make_unique<GraphicsPipeline>(*_shadowRenderPass, *_shadowShaderProgram, parameters);
+    _shadowPipeline = std::make_unique<GraphicsPipeline>(_shadowRenderPass, _shadowShaderProgram, parameters);
     return StatusOk();
 }
 
@@ -566,7 +578,7 @@ void Application::recordOctreeSecondaryCommandBuffer(const VkCommandBuffer comma
 }
 
 void Application::recordCommandBuffer(uint32_t imageIndex) {
-    const Framebuffer& framebuffer = *_framebuffers[imageIndex];
+    const Framebuffer& framebuffer = _framebuffers[imageIndex];
     const PrimaryCommandBuffer& primaryCommandBuffer = _primaryCommandBuffer[_currentFrame];
     primaryCommandBuffer.begin();
     primaryCommandBuffer.beginRenderPass(framebuffer);
@@ -656,11 +668,11 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer, uint3
     //}
 
     VkExtent2D extent = _shadowMap.getVkExtent2D();
-    std::span<const VkClearValue> clearValues = _shadowRenderPass->getAttachmentsLayout().getVkClearValues();
+    std::span<const VkClearValue> clearValues = _shadowRenderPass.getAttachmentsLayout().getVkClearValues();
     const VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = _shadowRenderPass->getVkRenderPass(),
-        .framebuffer = _shadowFramebuffer->getVkFramebuffer(),
+        .renderPass = _shadowRenderPass.getVkRenderPass(),
+        .framebuffer = _shadowFramebuffer.getVkFramebuffer(),
         .renderArea = {
             .offset = { 0, 0 },
             .extent = extent
@@ -721,13 +733,13 @@ Status Application::recreateSwapChain() {
 
     ASSIGN_OR_RETURN(_swapchain, SwapchainBuilder()
         .withOldSwapchain(_swapchain.getVkSwapchain())
-        .build(_logicalDevice, VkExtent2D{ extent.width, extent.height }));
+        .build(_logicalDevice, _surface.getVkSurface(), VkExtent2D{ extent.width, extent.height }));
     _attachments.clear();
     {
         SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
         const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
         for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
-            ASSIGN_OR_RETURN(_framebuffers[i], Framebuffer::createFromSwapchain(commandBuffer, *_renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
+            ASSIGN_OR_RETURN(_framebuffers[i], Framebuffer::createFromSwapchain(commandBuffer, _renderPass, _swapchain.getExtent(), _swapchain.getSwapchainVkImageView(i), _attachments));
         }
     }
     return StatusOk();
