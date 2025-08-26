@@ -336,7 +336,7 @@ Status Application::loadObjects() {
       if (!_textures.contains(diffusePath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager->getImageData(diffusePath));
-        ASSIGN_OR_RETURN(auto texture,
+        ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
                                          imgData.imageDimensions,
@@ -349,7 +349,7 @@ Status Application::loadObjects() {
       if (!_textures.contains(normalPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager->getImageData(normalPath));
-        ASSIGN_OR_RETURN(auto texture,
+        ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
                                          imgData.imageDimensions,
@@ -362,7 +362,7 @@ Status Application::loadObjects() {
       if (!_textures.contains(metallicRoughnessPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager->getImageData(metallicRoughnessPath));
-        ASSIGN_OR_RETURN(auto texture,
+        ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
                                          imgData.imageDimensions,
@@ -961,7 +961,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
 
   PushConstantsShadow pc = {.lightProjView = _ubLight.projView};
 
-  for (const auto &object : _objects) {
+  for (const Object &object : _objects) {
     const auto &meshComponent =
         _registry.getComponent<MeshComponent>(object.getEntity());
     const auto &transformComponent =
