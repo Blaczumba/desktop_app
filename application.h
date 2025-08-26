@@ -56,7 +56,7 @@ class Application {
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
-  std::unique_ptr<AssetManager> _assetManager; // Does not have to be unique_ptr
+  AssetManager _assetManager;
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;

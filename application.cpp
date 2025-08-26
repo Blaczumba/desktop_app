@@ -163,8 +163,6 @@ Application::Application()
                  errorToString(status.error()));
   }
 
-  _assetManager = std::make_unique<AssetManager>(_logicalDevice);
-
   if (Status status = createDescriptorSets(); !status) {
     std::println("Failed to create descriptor sets: {}",
                  errorToString(status.error()));
@@ -265,8 +263,8 @@ void Application::setInput() {
 Status Application::loadCubemap() {
   ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(MODELS_PATH "cube.obj"));
 
-  _assetManager->loadVertexDataAsync(
-      "cube.obj", vertexDataCube.indices,
+  _assetManager.loadVertexDataAsync(
+      _logicalDevice, "cube.obj", vertexDataCube.indices,
       static_cast<uint8_t>(vertexDataCube.indexType),
       std::span<const glm::vec3>(vertexDataCube.positions));
 
@@ -275,7 +273,7 @@ Status Application::loadCubemap() {
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                     _assetManager->getVertexData("cube.obj"));
+                     _assetManager.getVertexData("cube.obj"));
     ASSIGN_OR_RETURN(
         _vertexBufferCube,
         Buffer::createVertexBuffer(_logicalDevice,
@@ -302,20 +300,21 @@ Status Application::loadObjects() {
         sceneData[i].metallicRoughnessTexture.empty()) {
       continue;
     }
-    _assetManager->loadImage2DAsync(MODELS_PATH "sponza/" +
-                                    sceneData[i].diffuseTexture);
-    _assetManager->loadImage2DAsync(MODELS_PATH "sponza/" +
-                                    sceneData[i].metallicRoughnessTexture);
-    _assetManager->loadImage2DAsync(MODELS_PATH "sponza/" +
-                                    sceneData[i].normalTexture);
-    _assetManager->loadVertexDataInterleavingAsync(
-        std::to_string(i), sceneData[i].indices,
+    _assetManager.loadImage2DAsync(
+        _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].diffuseTexture);
+    _assetManager.loadImage2DAsync(_logicalDevice,
+                                   MODELS_PATH "sponza/" +
+                                       sceneData[i].metallicRoughnessTexture);
+    _assetManager.loadImage2DAsync(
+        _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].normalTexture);
+    _assetManager.loadVertexDataInterleavingAsync(
+        _logicalDevice, std::to_string(i), sceneData[i].indices,
         static_cast<uint8_t>(sceneData[i].indexType), sceneData[i].positions,
         sceneData[i].textureCoordinates, sceneData[i].normals,
         sceneData[i].tangents);
   }
 
-  float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
+  const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
 
   _objects.reserve(sceneData.size());
 
@@ -335,7 +334,7 @@ Status Application::loadObjects() {
           MODELS_PATH "sponza/" + sceneData[i].normalTexture;
       if (!_textures.contains(diffusePath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager->getImageData(diffusePath));
+                         _assetManager.getImageData(diffusePath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
@@ -348,7 +347,7 @@ Status Application::loadObjects() {
       }
       if (!_textures.contains(normalPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager->getImageData(normalPath));
+                         _assetManager.getImageData(normalPath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
@@ -361,7 +360,7 @@ Status Application::loadObjects() {
       }
       if (!_textures.contains(metallicRoughnessPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager->getImageData(metallicRoughnessPath));
+                         _assetManager.getImageData(metallicRoughnessPath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
                                          imgData.stagingBuffer.getVkBuffer(),
@@ -378,7 +377,7 @@ Status Application::loadObjects() {
                                _textures[normalPath].first,
                                _textures[metallicRoughnessPath].first});
       ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                       _assetManager->getVertexData(std::to_string(i)));
+                       _assetManager.getVertexData(std::to_string(i)));
       MeshComponent msh;
       ASSIGN_OR_RETURN(msh.vertexBuffer,
                        Buffer::createVertexBuffer(
@@ -413,7 +412,7 @@ Status Application::loadObjects() {
   AABB sceneAABB =
       _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
 
-  for (int i = 1; i < _objects.size(); i++) {
+  for (int i = 1; i < _objects.size(); ++i) {
     sceneAABB.extend(
         _registry.getComponent<MeshComponent>(_objects[i].getEntity()).aabb);
   }
@@ -429,14 +428,14 @@ Status Application::loadObjects() {
 
 Status Application::createDescriptorSets() {
   float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
-  _assetManager->loadImageCubemapAsync(TEXTURES_PATH
-                                       "cubemap_yokohama_rgba.ktx");
+  _assetManager.loadImageCubemapAsync(_logicalDevice, TEXTURES_PATH
+                                      "cubemap_yokohama_rgba.ktx");
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
     ASSIGN_OR_RETURN(
         const AssetManager::ImageData &imgData,
-        _assetManager->getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
+        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
     ASSIGN_OR_RETURN(_textureCubemap,
                      createCubemap(_logicalDevice, commandBuffer,
                                    imgData.stagingBuffer.getVkBuffer(),
@@ -817,17 +816,18 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     };
   }
 
-  std::future<void> futures[MAX_THREADS_IN_POOL];
+  std::future<Status> futures[MAX_THREADS_IN_POOL];
 
-  futures[0] = std::async(std::launch::async, [&]() {
+  futures[0] = std::async(std::launch::async, [&]() -> Status {
     const VkCommandBuffer commandBuffer =
         _commandBuffers[0][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      _commandBuffers[0][_currentFrame].begin(framebuffer,
-                                              &scissorViewportInheritance);
+      CHECK_VKCMD(_commandBuffers[0][_currentFrame].begin(
+          framebuffer, &scissorViewportInheritance));
     } else {
-      _commandBuffers[0][_currentFrame].begin(framebuffer, nullptr);
+      CHECK_VKCMD(
+          _commandBuffers[0][_currentFrame].begin(framebuffer, nullptr));
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -856,19 +856,22 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     recordOctreeSecondaryCommandBuffer(commandBuffer, root, planes);
 
-    vkEndCommandBuffer(commandBuffer);
+    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer));
+
+    return StatusOk();
   });
 
-  futures[1] = std::async(std::launch::async, [&]() {
+  futures[1] = std::async(std::launch::async, [&]() -> Status {
     // Skybox
     const VkCommandBuffer commandBuffer =
         _commandBuffers[1][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      _commandBuffers[1][_currentFrame].begin(framebuffer,
-                                              &scissorViewportInheritance);
+      CHECK_VKCMD(_commandBuffers[1][_currentFrame].begin(
+          framebuffer, &scissorViewportInheritance));
     } else {
-      _commandBuffers[1][_currentFrame].begin(framebuffer, nullptr);
+      CHECK_VKCMD(
+          _commandBuffers[1][_currentFrame].begin(framebuffer, nullptr));
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -907,7 +910,9 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 
-    vkEndCommandBuffer(commandBuffer);
+    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer));
+
+    return StatusOk();
   });
 
   futures[0].wait();
