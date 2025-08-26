@@ -915,8 +915,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     return StatusOk();
   });
 
-  futures[0].wait();
-  futures[1].wait();
+  std::for_each(std::begin(futures), std::end(futures),
+                [](std::future<Status> &future) { return future.wait(); });
 
   primaryCommandBuffer.executeSecondaryCommandBuffers(
       {_commandBuffers[0][_currentFrame].getVkCommandBuffer(),
