@@ -138,7 +138,7 @@ private:
   void recordCommandBuffer(uint32_t imageIndex);
   void recordOctreeSecondaryCommandBuffer(
       const VkCommandBuffer commandBuffer, const OctreeNode *node,
-      const std::array<glm::vec4, NUM_CUBE_FACES> &planes);
+      std::span<const glm::vec4> planes);
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
                                  uint32_t imageIndex);
   Status recreateSwapChain();

@@ -15,6 +15,7 @@
 #include "bejzak_engine/vulkan_wrapper/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
 #include "bejzak_engine/vulkan_wrapper/render_pass/attachment_layout.h"
+#include "bejzak_engine/vulkan_wrapper/util/check.h"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,8 @@
 #include <iostream>
 #include <print>
 #include <queue>
+
+namespace {
 
 ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
@@ -149,6 +152,8 @@ std::string_view errorToString(const ErrorType &error) {
   }
 }
 
+} // namespace
+
 Application::Application()
     : _projection(std::make_shared<PerspectiveProjection>(
           glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f)),
@@ -244,6 +249,7 @@ void Application::setInput() {
   if (_mouseKeyboardManager == nullptr) {
     return;
   }
+
   _mouseKeyboardManager->absorbCursor();
 
   _mouseKeyboardManager->setKeyboardCallback(
@@ -258,13 +264,16 @@ void Application::setInput() {
 
 Status Application::loadCubemap() {
   ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(MODELS_PATH "cube.obj"));
+
   _assetManager->loadVertexDataAsync(
       "cube.obj", vertexDataCube.indices,
       static_cast<uint8_t>(vertexDataCube.indexType),
       std::span<const glm::vec3>(vertexDataCube.positions));
+
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
+
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
                      _assetManager->getVertexData("cube.obj"));
     ASSIGN_OR_RETURN(
@@ -280,16 +289,19 @@ Status Application::loadCubemap() {
         _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer));
     _indexBufferCubeType = vData.indexType;
   }
+
   return StatusOk();
 }
 
 Status Application::loadObjects() {
   // TODO needs refactoring
   ASSIGN_OR_RETURN(auto sceneData, LoadGltf(MODELS_PATH "sponza/scene.gltf"));
+
   for (uint32_t i = 0; i < sceneData.size(); i++) {
     if (sceneData[i].normalTexture.empty() ||
-        sceneData[i].metallicRoughnessTexture.empty())
+        sceneData[i].metallicRoughnessTexture.empty()) {
       continue;
+    }
     _assetManager->loadImage2DAsync(MODELS_PATH "sponza/" +
                                     sceneData[i].diffuseTexture);
     _assetManager->loadImage2DAsync(MODELS_PATH "sponza/" +
@@ -302,8 +314,11 @@ Status Application::loadObjects() {
         sceneData[i].textureCoordinates, sceneData[i].normals,
         sceneData[i].tangents);
   }
+
   float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
+
   _objects.reserve(sceneData.size());
+
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
@@ -382,10 +397,8 @@ Status Application::loadObjects() {
       RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(
           commandBuffer, vData.vertexBufferPositions));
       msh.indexType = vData.indexType;
-      msh.aabb = createAABBfromVertices(
-          std::vector<glm::vec3>(sceneData[i].positions.cbegin(),
-                                 sceneData[i].positions.cend()),
-          sceneData[i].model);
+      msh.aabb =
+          createAABBfromVertices(sceneData[i].positions, sceneData[i].model);
       _registry.addComponent<MeshComponent>(e, std::move(msh));
 
       TransformComponent trsf;
@@ -395,6 +408,8 @@ Status Application::loadObjects() {
       _entityToIndex.emplace(e, index);
     }
   }
+
+  // TODO: Move it to separate function!
   AABB sceneAABB =
       _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
 
@@ -404,7 +419,7 @@ Status Application::loadObjects() {
   }
   _octree = std::make_unique<Octree>(sceneAABB);
 
-  for (const auto &object : _objects)
+  for (const Object &object : _objects)
     _octree->addObject(
         &object,
         _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
@@ -606,9 +621,9 @@ void Application::run() {
 }
 
 void Application::draw() {
-  VkDevice device = _logicalDevice.getVkDevice();
-  vkWaitForFences(device, 1, &_inFlightFences[_currentFrame], VK_TRUE,
-                  UINT64_MAX);
+  vkWaitForFences(_logicalDevice.getVkDevice(), 1,
+                  &_inFlightFences[_currentFrame], VK_TRUE, UINT64_MAX);
+
   uint32_t imageIndex;
   VkResult result = _swapchain.acquireNextImage(
       _imageAvailableSemaphores[_currentFrame], &imageIndex);
@@ -621,18 +636,17 @@ void Application::draw() {
   }
 
   updateUniformBuffer(_currentFrame);
-  vkResetFences(device, 1, &_inFlightFences[_currentFrame]);
+
+  vkResetFences(_logicalDevice.getVkDevice(), 1,
+                &_inFlightFences[_currentFrame]);
 
   _primaryCommandBuffer[_currentFrame].resetCommandBuffer();
   for (int i = 0; i < MAX_THREADS_IN_POOL; i++)
     _commandBuffers[i][_currentFrame].resetCommandBuffer();
 
-  // recordShadowCommandBuffer(_shadowCommandBuffers[_currentFrame],
-  // imageIndex);
   recordCommandBuffer(imageIndex);
 
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  VkSubmitInfo submitInfo = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
 
   VkSemaphore waitSemaphores[] = {_imageAvailableSemaphores[_currentFrame]};
   VkPipelineStageFlags waitStages[] = {
@@ -641,10 +655,11 @@ void Application::draw() {
   submitInfo.pWaitSemaphores = waitSemaphores;
   submitInfo.pWaitDstStageMask = waitStages;
 
-  std::array<VkCommandBuffer, 1> submitCommands = {
+  VkCommandBuffer submitCommands[] = {
       _primaryCommandBuffer[_currentFrame].getVkCommandBuffer()};
-  submitInfo.commandBufferCount = static_cast<uint32_t>(submitCommands.size());
-  submitInfo.pCommandBuffers = submitCommands.data();
+  submitInfo.commandBufferCount =
+      static_cast<uint32_t>(std::size(submitCommands));
+  submitInfo.pCommandBuffers = submitCommands;
 
   VkSemaphore signalSemaphores[] = {_renderFinishedSemaphores[_currentFrame]};
   submitInfo.signalSemaphoreCount = 1;
@@ -654,8 +669,8 @@ void Application::draw() {
                     _inFlightFences[_currentFrame]) != VK_SUCCESS) {
     throw std::runtime_error("failed to submit draw command buffer!");
   }
-  result = _swapchain.present(imageIndex, signalSemaphores[0]);
 
+  result = _swapchain.present(imageIndex, signalSemaphores[0]);
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
     recreateSwapChain();
   } else if (result != VK_SUCCESS) {
@@ -668,7 +683,6 @@ void Application::draw() {
 }
 
 Status Application::createSyncObjects() {
-  const VkDevice device = _logicalDevice.getVkDevice();
   const VkSemaphoreCreateInfo semaphoreInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   const VkFenceCreateInfo fenceInfo = {.sType =
@@ -676,21 +690,12 @@ Status Application::createSyncObjects() {
                                        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    if (VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-                                            &_imageAvailableSemaphores[i]);
-        result != VK_SUCCESS) {
-      return Error(result);
-    }
-    if (VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-                                            &_renderFinishedSemaphores[i]);
-        result != VK_SUCCESS) {
-      return Error(result);
-    }
-    if (VkResult result =
-            vkCreateFence(device, &fenceInfo, nullptr, &_inFlightFences[i]);
-        result != VK_SUCCESS) {
-      return Error(result);
-    }
+    CHECK_VKCMD(vkCreateSemaphore(_logicalDevice.getVkDevice(), &semaphoreInfo,
+                                  nullptr, &_imageAvailableSemaphores[i]));
+    CHECK_VKCMD(vkCreateSemaphore(_logicalDevice.getVkDevice(), &semaphoreInfo,
+                                  nullptr, &_renderFinishedSemaphores[i]));
+    CHECK_VKCMD(vkCreateFence(_logicalDevice.getVkDevice(), &fenceInfo, nullptr,
+                              &_inFlightFences[i]));
   }
   return StatusOk();
 }
@@ -718,28 +723,19 @@ Status Application::createCommandBuffers() {
         _commandPools[i]
             ->createSecondaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
   }
+  return StatusOk();
 }
 
 void Application::recordOctreeSecondaryCommandBuffer(
     const VkCommandBuffer commandBuffer, const OctreeNode *rootNode,
-    const std::array<glm::vec4, NUM_CUBE_FACES> &planes) {
+    std::span<const glm::vec4> planes) {
   if (!rootNode || !rootNode->getVolume().intersectsFrustum(planes))
     return;
 
-  static std::queue<const OctreeNode *> nodeQueue;
+  static std::queue<const OctreeNode *> nodeQueue; // Keep it static to preserve
+  // capacity
   nodeQueue.push(rootNode);
 
-  VkDescriptorSet descriptorSets[] = {
-      _bindlessDescriptorSet.getVkDescriptorSet(),
-      _dynamicDescriptorSet.getVkDescriptorSet()};
-  uint32_t offset;
-  _dynamicDescriptorSetWriter.getDynamicBufferSizesWithOffsets(&offset,
-                                                               {_currentFrame});
-  vkCmdBindDescriptorSets(commandBuffer,
-                          _graphicsPipeline->getVkPipelineBindPoint(),
-                          _graphicsPipeline->getVkPipelineLayout(), 0,
-                          static_cast<uint32_t>(std::size(descriptorSets)),
-                          descriptorSets, 1, &offset);
   while (!nodeQueue.empty()) {
     const OctreeNode *node = nodeQueue.front();
     nodeQueue.pop();
@@ -790,7 +786,7 @@ void Application::recordOctreeSecondaryCommandBuffer(
         OctreeNode::Subvolume::UPPER_RIGHT_BACK,
         OctreeNode::Subvolume::UPPER_RIGHT_FRONT};
 
-    for (auto option : options) {
+    for (OctreeNode::Subvolume option : options) {
       const OctreeNode *childNode = node->getChild(option);
       if (childNode && childNode->getVolume().intersectsFrustum(planes)) {
         nodeQueue.push(childNode);
@@ -809,6 +805,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
   static const bool viewportScissorInheritance =
       _physicalDevice->hasAvailableExtension(
           VK_NV_INHERITED_VIEWPORT_SCISSOR_EXTENSION_NAME);
+
   VkCommandBufferInheritanceViewportScissorInfoNV scissorViewportInheritance;
   if (viewportScissorInheritance) [[likely]] {
     scissorViewportInheritance = VkCommandBufferInheritanceViewportScissorInfoNV{
@@ -820,7 +817,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     };
   }
 
-  std::array<std::future<void>, MAX_THREADS_IN_POOL> futures;
+  std::future<void> futures[MAX_THREADS_IN_POOL];
 
   futures[0] = std::async(std::launch::async, [&]() {
     const VkCommandBuffer commandBuffer =
@@ -841,6 +838,22 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     const OctreeNode *root = _octree->getRoot();
     const auto &planes = extractFrustumPlanes(_camera.getProjectionMatrix() *
                                               _camera.getViewMatrix());
+
+    VkDescriptorSet descriptorSets[] = {
+        _bindlessDescriptorSet.getVkDescriptorSet(),
+        _dynamicDescriptorSet.getVkDescriptorSet()};
+
+    uint32_t offset;
+
+    _dynamicDescriptorSetWriter.getDynamicBufferSizesWithOffsets(
+        &offset, {_currentFrame});
+
+    vkCmdBindDescriptorSets(commandBuffer,
+                            _graphicsPipeline->getVkPipelineBindPoint(),
+                            _graphicsPipeline->getVkPipelineLayout(), 0,
+                            static_cast<uint32_t>(std::size(descriptorSets)),
+                            descriptorSets, 1, &offset);
+
     recordOctreeSecondaryCommandBuffer(commandBuffer, root, planes);
 
     vkEndCommandBuffer(commandBuffer);
@@ -859,13 +872,16 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
+
     vkCmdBindPipeline(commandBuffer,
                       _graphicsPipelineSkybox->getVkPipelineBindPoint(),
                       _graphicsPipelineSkybox->getVkPipeline());
 
     static constexpr VkDeviceSize offsets[] = {0};
+
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
                            &_vertexBufferCube.getVkBuffer(), offsets);
+
     vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
@@ -877,12 +893,15 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         commandBuffer, _graphicsPipelineSkybox->getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
+
     const VkDescriptorSet descriptorSet =
         _bindlessDescriptorSet.getVkDescriptorSet();
+
     vkCmdBindDescriptorSets(commandBuffer,
                             _graphicsPipelineSkybox->getVkPipelineBindPoint(),
                             _graphicsPipelineSkybox->getVkPipelineLayout(), 0,
                             1, &descriptorSet, 0, nullptr);
+
     vkCmdDrawIndexed(commandBuffer,
                      _indexBufferCube.getSize() /
                          getIndexSize(_indexBufferCubeType),
@@ -909,13 +928,11 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
   const VkCommandBufferBeginInfo beginInfo = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
-  // if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-  //     throw std::runtime_error("failed to begin recording command buffer!");
-  // }
-
   VkExtent2D extent = _shadowMap.getVkExtent2D();
+
   std::span<const VkClearValue> clearValues =
       _shadowRenderPass.getAttachmentsLayout().getVkClearValues();
+
   const VkRenderPassBeginInfo renderPassInfo = {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
       .renderPass = _shadowRenderPass.getVkRenderPass(),
@@ -923,6 +940,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
       .renderArea = {.offset = {0, 0}, .extent = extent},
       .clearValueCount = static_cast<uint32_t>(clearValues.size()),
       .pClearValues = clearValues.data()};
+
   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
                        VK_SUBPASS_CONTENTS_INLINE);
 
@@ -942,20 +960,25 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
                     _shadowPipeline->getVkPipeline());
 
   PushConstantsShadow pc = {.lightProjView = _ubLight.projView};
+
   for (const auto &object : _objects) {
     const auto &meshComponent =
         _registry.getComponent<MeshComponent>(object.getEntity());
     const auto &transformComponent =
         _registry.getComponent<TransformComponent>(object.getEntity());
+
     pc.model = transformComponent.model;
+
     vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
-    VkBuffer vertexBuffers[] = {
-        meshComponent.vertexBufferPrimitive.getVkBuffer()};
+
+    VkBuffer vertexBuffer = meshComponent.vertexBufferPrimitive.getVkBuffer();
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+
     const Buffer &indexBuffer = meshComponent.indexBuffer;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
+
     vkCmdDrawIndexed(commandBuffer,
                      indexBuffer.getSize() /
                          getIndexSize(meshComponent.indexType),
@@ -963,9 +986,6 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
   }
 
   vkCmdEndRenderPass(commandBuffer);
-  // if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-  //     throw std::runtime_error("failed to record command buffer!");
-  // }
 }
 
 Status Application::recreateSwapChain() {
@@ -983,6 +1003,7 @@ Status Application::recreateSwapChain() {
                        .build(_logicalDevice, _surface.getVkSurface(),
                               VkExtent2D{extent.width, extent.height}));
   _attachments.clear();
+
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
@@ -994,5 +1015,6 @@ Status Application::recreateSwapChain() {
                            _attachments));
     }
   }
+
   return StatusOk();
 }
