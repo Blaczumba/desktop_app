@@ -76,7 +76,6 @@ class Application {
   VkIndexType _indexBufferCubeType;
   std::unique_ptr<GraphicsPipeline>
       _graphicsPipelineSkybox; // Does not have to be unique_ptr
-  std::shared_ptr<DescriptorPool> _descriptorPoolSkybox;
   ShaderProgram _skyboxShaderProgram;
   TextureHandle _skyboxHandle;
 
@@ -136,9 +135,9 @@ private:
   Status createSyncObjects();
   void updateUniformBuffer(uint32_t currentImage);
   void recordCommandBuffer(uint32_t imageIndex);
-  void recordOctreeSecondaryCommandBuffer(
-      const VkCommandBuffer commandBuffer, const OctreeNode *node,
-      std::span<const glm::vec4> planes);
+  void recordOctreeSecondaryCommandBuffer(const VkCommandBuffer commandBuffer,
+                                          const OctreeNode *node,
+                                          std::span<const glm::vec4> planes);
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
                                  uint32_t imageIndex);
   Status recreateSwapChain();

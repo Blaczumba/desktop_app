@@ -8,6 +8,7 @@
 #include "bejzak_engine/common/entity_component_system/component/transform.h"
 #include "bejzak_engine/common/entity_component_system/component/velocity.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
+#include "bejzak_engine/common/file/standard_file_loader.h"
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/util/vertex_builder.h"
 #include "bejzak_engine/common/window/window_glfw.h"
@@ -157,10 +158,15 @@ std::string_view errorToString(const ErrorType &error) {
 Application::Application()
     : _projection(std::make_shared<PerspectiveProjection>(
           glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f)),
-      _camera(_projection, glm::vec3(0.0f), 5.5f, 0.01f) {
+      _camera(_projection, glm::vec3(0.0f), 5.5f, 0.01f),
+      _assetManager(std::make_unique<StandardFileLoader>()) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
                  errorToString(status.error()));
+  }
+
+  if (Status status = loadCubemap(); !status) {
+    std::println("Failed to load cubemap: {}", errorToString(status.error()));
   }
 
   if (Status status = createDescriptorSets(); !status) {
@@ -170,10 +176,6 @@ Application::Application()
 
   if (Status status = loadObjects(); !status) {
     std::println("Failed to load objects: {}", errorToString(status.error()));
-  }
-
-  if (Status status = loadCubemap(); !status) {
-    std::println("Failed to load cubemap: {}", errorToString(status.error()));
   }
 
   if (Status status = createPresentResources(); !status) {
@@ -261,6 +263,8 @@ void Application::setInput() {
 }
 
 Status Application::loadCubemap() {
+  _assetManager.loadImageCubemapAsync(_logicalDevice, TEXTURES_PATH
+                                      "cubemap_yokohama_rgba.ktx");
   ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(MODELS_PATH "cube.obj"));
 
   _assetManager.loadVertexDataAsync(
@@ -271,6 +275,16 @@ Status Application::loadCubemap() {
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
+
+    ASSIGN_OR_RETURN(
+        const AssetManager::ImageData &imgData,
+        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
+    ASSIGN_OR_RETURN(_textureCubemap,
+                     createCubemap(_logicalDevice, commandBuffer,
+                                   imgData.stagingBuffer.getVkBuffer(),
+                                   imgData.imageDimensions,
+                                   VK_FORMAT_R8G8B8A8_UNORM,
+                                   _physicalDevice->getMaxSamplerAnisotropy()));
 
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
                      _assetManager.getVertexData("cube.obj"));
@@ -427,21 +441,10 @@ Status Application::loadObjects() {
 }
 
 Status Application::createDescriptorSets() {
-  float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
-  _assetManager.loadImageCubemapAsync(_logicalDevice, TEXTURES_PATH
-                                      "cubemap_yokohama_rgba.ktx");
   {
+    // TODO: Should not be in this function.
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    ASSIGN_OR_RETURN(
-        const AssetManager::ImageData &imgData,
-        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
-    ASSIGN_OR_RETURN(_textureCubemap,
-                     createCubemap(_logicalDevice, commandBuffer,
-                                   imgData.stagingBuffer.getVkBuffer(),
-                                   imgData.imageDimensions,
-                                   VK_FORMAT_R8G8B8A8_UNORM,
-                                   maxSamplerAnisotropy));
     ASSIGN_OR_RETURN(_shadowMap,
                      createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
                                      1024 * 2, VK_FORMAT_D32_SFLOAT));
@@ -465,8 +468,6 @@ Status Application::createDescriptorSets() {
       DescriptorPool::create(_logicalDevice, 150,
                              VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT));
   ASSIGN_OR_RETURN(_dynamicDescriptorPool,
-                   DescriptorPool::create(_logicalDevice, 1));
-  ASSIGN_OR_RETURN(_descriptorPoolSkybox,
                    DescriptorPool::create(_logicalDevice, 1));
 
   ASSIGN_OR_RETURN(_bindlessDescriptorSet,
