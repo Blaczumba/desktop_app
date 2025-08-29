@@ -118,7 +118,7 @@ class Application {
   uint32_t _currentFrame = 0;
 
 public:
-  Application();
+  Application(const std::shared_ptr<FileLoader>& fileLoader);
   ~Application();
 
   Application(const Application &) = delete;

@@ -155,11 +155,11 @@ std::string_view errorToString(const ErrorType &error) {
 
 } // namespace
 
-Application::Application()
+Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
     : _projection(std::make_shared<PerspectiveProjection>(
           glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f)),
       _camera(_projection, glm::vec3(0.0f), 5.5f, 0.01f),
-      _assetManager(std::make_unique<StandardFileLoader>()) {
+      _assetManager(fileLoader), _programManager(fileLoader) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
                  errorToString(status.error()));
