@@ -265,7 +265,10 @@ void Application::setInput() {
 Status Application::loadCubemap() {
   _assetManager.loadImageCubemapAsync(_logicalDevice, TEXTURES_PATH
                                       "cubemap_yokohama_rgba.ktx");
-  ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(MODELS_PATH "cube.obj"));
+  // TODO: temporal experiment
+  auto fileLoader = std::make_unique<StandardFileLoader>();
+  ASSIGN_OR_RETURN(auto data, fileLoader->loadFileToStringStream(MODELS_PATH "cube.obj"));
+  ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(data));
 
   _assetManager.loadVertexDataAsync(
       _logicalDevice, "cube.obj", vertexDataCube.indices,
