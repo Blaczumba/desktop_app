@@ -27,23 +27,42 @@
 
 namespace {
 
+lib::Buffer<VkBufferImageCopy> createBufferImageCopyRegions(
+    std::span<const ImageSubresource> subresources) {
+  lib::Buffer<VkBufferImageCopy> regions(subresources.size());
+  std::transform(subresources.cbegin(), subresources.cend(), regions.begin(),
+                 [](const ImageSubresource& subresource) {
+                   return VkBufferImageCopy{
+                       .bufferOffset = subresource.offset,
+                       .imageSubresource = {
+                           .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                           .mipLevel = subresource.mipLevel,
+                           .baseArrayLayer = subresource.baseArrayLayer,
+                           .layerCount = subresource.layerCount},
+                       .imageExtent = {
+                           .width = subresource.width,
+                           .height = subresource.height,
+                           .depth = subresource.depth}};
+                 });
+  return regions;
+}
+
 ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
-                               VkBuffer stagingBuffer,
-                               const ImageDimensions &dimensions,
+                               const AssetManager::ImageData& imageData,
                                VkFormat format, float samplerAnisotropy) {
   return TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
-      .withExtent(dimensions.width, dimensions.height)
+      .withExtent(imageData.width, imageData.height)
       .withFormat(format)
-      .withMipLevels(dimensions.mipLevels)
+      .withMipLevels(imageData.mipLevels)
       .withUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
       .withLayerCount(6)
       .withMaxAnisotropy(samplerAnisotropy)
-      .withMaxLod(static_cast<float>(dimensions.mipLevels))
+      .withMaxLod(static_cast<float>(imageData.mipLevels))
       .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-      .buildImage(logicalDevice, commandBuffer, stagingBuffer,
-                  dimensions.copyRegions);
+      .buildImage(logicalDevice, commandBuffer, imageData.stagingBuffer.getVkBuffer(),
+                  createBufferImageCopyRegions(imageData.copyRegions));
 }
 
 ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
@@ -65,20 +84,36 @@ ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
 
 ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
                                  VkCommandBuffer commandBuffer,
-                                 VkBuffer stagingBuffer,
-                                 const ImageDimensions &dimensions,
+                                 const AssetManager::ImageData &imageData,
                                  VkFormat format, float samplerAnisotropy) {
+    lib::Buffer<VkBufferImageCopy> subresources(imageData.copyRegions.size());
+    std::transform(imageData.copyRegions.cbegin(),
+        imageData.copyRegions.cend(), subresources.begin(),
+        [](const ImageSubresource& subresource) {
+            return VkBufferImageCopy{
+                .bufferOffset = subresource.offset,
+                .imageSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = subresource.mipLevel,
+                    .baseArrayLayer = subresource.baseArrayLayer,
+                    .layerCount = subresource.layerCount},
+                .imageExtent = {
+                    .width = subresource.width,
+                    .height = subresource.height,
+                    .depth = subresource.depth}
+            };
+        });
   return TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
-      .withExtent(dimensions.width, dimensions.height)
+      .withExtent(imageData.width, imageData.height)
       .withFormat(format)
-      .withMipLevels(dimensions.mipLevels)
+      .withMipLevels(imageData.mipLevels)
       .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
       .withMaxAnisotropy(samplerAnisotropy)
-      .withMaxLod(static_cast<float>(dimensions.mipLevels))
-      .buildMipmapImage(logicalDevice, commandBuffer, stagingBuffer,
-                        dimensions.copyRegions);
+      .withMaxLod(static_cast<float>(imageData.mipLevels))
+      .buildMipmapImage(logicalDevice, commandBuffer, imageData.stagingBuffer.getVkBuffer(),
+          createBufferImageCopyRegions(imageData.copyRegions));
 }
 
 constexpr std::string_view engineErrorToString(EngineError error) {
@@ -280,14 +315,11 @@ Status Application::loadCubemap() {
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
     ASSIGN_OR_RETURN(
-        const AssetManager::ImageData &imgData,
+        const AssetManager::ImageData &imageData,
         _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
-    ASSIGN_OR_RETURN(_textureCubemap,
-                     createCubemap(_logicalDevice, commandBuffer,
-                                   imgData.stagingBuffer.getVkBuffer(),
-                                   imgData.imageDimensions,
-                                   VK_FORMAT_R8G8B8A8_UNORM,
-                                   _physicalDevice->getMaxSamplerAnisotropy()));
+    
+    ASSIGN_OR_RETURN(_textureCubemap, createCubemap(_logicalDevice, commandBuffer, imageData,
+        VK_FORMAT_R8G8B8A8_UNORM, _physicalDevice->getMaxSamplerAnisotropy()));
 
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
                      _assetManager.getVertexData("cube.obj"));
@@ -354,9 +386,7 @@ Status Application::loadObjects() {
                          _assetManager.getImageData(diffusePath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData.stagingBuffer.getVkBuffer(),
-                                         imgData.imageDimensions,
-                                         VK_FORMAT_R8G8B8A8_SRGB,
+                                         imgData, VK_FORMAT_R8G8B8A8_SRGB,
                                          maxSamplerAnisotropy));
         _textures.emplace(diffusePath,
                           std::make_pair(_bindlessWriter->storeTexture(texture),
@@ -367,9 +397,7 @@ Status Application::loadObjects() {
                          _assetManager.getImageData(normalPath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData.stagingBuffer.getVkBuffer(),
-                                         imgData.imageDimensions,
-                                         VK_FORMAT_R8G8B8A8_UNORM,
+                                         imgData, VK_FORMAT_R8G8B8A8_UNORM,
                                          maxSamplerAnisotropy));
         _textures.emplace(normalPath,
                           std::make_pair(_bindlessWriter->storeTexture(texture),
@@ -380,9 +408,7 @@ Status Application::loadObjects() {
                          _assetManager.getImageData(metallicRoughnessPath));
         ASSIGN_OR_RETURN(Texture texture,
                          createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData.stagingBuffer.getVkBuffer(),
-                                         imgData.imageDimensions,
-                                         VK_FORMAT_R8G8B8A8_UNORM,
+                                         imgData, VK_FORMAT_R8G8B8A8_UNORM,
                                          maxSamplerAnisotropy));
         _textures.emplace(metallicRoughnessPath,
                           std::make_pair(_bindlessWriter->storeTexture(texture),
