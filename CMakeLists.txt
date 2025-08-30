@@ -62,7 +62,6 @@ add_subdirectory(bejzak_engine)
 add_executable(${CMAKE_PROJECT_NAME} main.cpp application.cpp)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE LibStrongTypes)
 target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC BejzakEngine)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBJLoader)
 
 if(WIN32)
     set(SHADER_COMPILE_SCRIPT

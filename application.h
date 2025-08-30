@@ -20,7 +20,6 @@
 #include "bejzak_engine/vulkan_wrapper/logical_device/logical_device.h"
 #include "bejzak_engine/vulkan_wrapper/memory_objects/buffer.h"
 #include "bejzak_engine/vulkan_wrapper/memory_objects/texture.h"
-#include "bejzak_engine/vulkan_wrapper/model_loader/obj_loader/obj_loader.h"
 #include "bejzak_engine/vulkan_wrapper/physical_device/physical_device.h"
 #include "bejzak_engine/vulkan_wrapper/pipeline/graphics_pipeline.h"
 #include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"

@@ -9,11 +9,13 @@
 #include "bejzak_engine/common/entity_component_system/component/velocity.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/file/standard_file_loader.h"
+#include "bejzak_engine/common/model_loader/model_loader.h"
+#include "bejzak_engine/common/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
+#include "bejzak_engine/common/model_loader/obj_loader/obj_loader.h"
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/util/vertex_builder.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/lib/buffer/shared_buffer.h"
-#include "bejzak_engine/vulkan_wrapper/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
 #include "bejzak_engine/vulkan_wrapper/render_pass/attachment_layout.h"
 #include "bejzak_engine/vulkan_wrapper/util/check.h"
@@ -86,23 +88,6 @@ ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
                                  VkCommandBuffer commandBuffer,
                                  const AssetManager::ImageData &imageData,
                                  VkFormat format, float samplerAnisotropy) {
-    lib::Buffer<VkBufferImageCopy> subresources(imageData.copyRegions.size());
-    std::transform(imageData.copyRegions.cbegin(),
-        imageData.copyRegions.cend(), subresources.begin(),
-        [](const ImageSubresource& subresource) {
-            return VkBufferImageCopy{
-                .bufferOffset = subresource.offset,
-                .imageSubresource = {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .mipLevel = subresource.mipLevel,
-                    .baseArrayLayer = subresource.baseArrayLayer,
-                    .layerCount = subresource.layerCount},
-                .imageExtent = {
-                    .width = subresource.width,
-                    .height = subresource.height,
-                    .depth = subresource.depth}
-            };
-        });
   return TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
       .withExtent(imageData.width, imageData.height)
@@ -286,7 +271,6 @@ void Application::setInput() {
   }
 
   _mouseKeyboardManager->absorbCursor();
-
   _mouseKeyboardManager->setKeyboardCallback(
       [&](Keyboard::Key key, int action) {
         switch (key) {
@@ -298,12 +282,13 @@ void Application::setInput() {
 }
 
 Status Application::loadCubemap() {
-  _assetManager.loadImageCubemapAsync(_logicalDevice, TEXTURES_PATH
+  _assetManager.loadImageAsync(_logicalDevice, TEXTURES_PATH
                                       "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
   auto fileLoader = std::make_unique<StandardFileLoader>();
-  ASSIGN_OR_RETURN(auto data, fileLoader->loadFileToStringStream(MODELS_PATH "cube.obj"));
-  ASSIGN_OR_RETURN(VertexData vertexDataCube, loadObj(data));
+  ASSIGN_OR_RETURN(std::istringstream data,
+                   fileLoader->loadFileToStringStream(MODELS_PATH "cube.obj"));
+  ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(data));
 
   _assetManager.loadVertexDataAsync(
       _logicalDevice, "cube.obj", vertexDataCube.indices,
@@ -349,12 +334,12 @@ Status Application::loadObjects() {
         sceneData[i].metallicRoughnessTexture.empty()) {
       continue;
     }
-    _assetManager.loadImage2DAsync(
+    _assetManager.loadImageAsync(
         _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].diffuseTexture);
-    _assetManager.loadImage2DAsync(_logicalDevice,
+    _assetManager.loadImageAsync(_logicalDevice,
                                    MODELS_PATH "sponza/" +
                                        sceneData[i].metallicRoughnessTexture);
-    _assetManager.loadImage2DAsync(
+    _assetManager.loadImageAsync(
         _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].normalTexture);
     _assetManager.loadVertexDataInterleavingAsync(
         _logicalDevice, std::to_string(i), sceneData[i].indices,
