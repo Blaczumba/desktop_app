@@ -1,7 +1,7 @@
 #include "application.h"
 
 #include "bejzak_engine/common/camera/camera.h"
-#include "bejzak_engine/common/camera/perspective_projection.h"
+#include "bejzak_engine/common/camera/projection.h"
 #include "bejzak_engine/common/entity_component_system/component/material.h"
 #include "bejzak_engine/common/entity_component_system/component/mesh.h"
 #include "bejzak_engine/common/entity_component_system/component/position.h"
@@ -176,9 +176,7 @@ std::string_view errorToString(const ErrorType &error) {
 } // namespace
 
 Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
-    : _projection(std::make_shared<PerspectiveProjection>(
-          glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f)),
-      _camera(_projection, glm::vec3(0.0f), 5.5f, 0.01f),
+    : _camera(PerspectiveProjection{ glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f }, glm::vec3(0.0f), 5.5f, 0.01f),
       _assetManager(fileLoader), _programManager(fileLoader) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
@@ -1014,7 +1012,11 @@ Status Application::recreateSwapChain() {
     extent = _window->getFramebufferSize();
   }
 
-  _projection->setAspectRatio(static_cast<float>(extent.width) / extent.height);
+  Projection oldProjection = _camera.getProjection();
+  if (auto projection = std::get_if<PerspectiveProjection>(&oldProjection); projection != nullptr) {
+	  projection->aspect = static_cast<float>(extent.width) / extent.height;
+	  _camera.setProjection(*projection);
+  }
   vkDeviceWaitIdle(_logicalDevice.getVkDevice());
 
   ASSIGN_OR_RETURN(_swapchain,
@@ -1023,16 +1025,18 @@ Status Application::recreateSwapChain() {
                        .build(_logicalDevice, _surface.getVkSurface(),
                               VkExtent2D{extent.width, extent.height}));
   _attachments.clear();
+  _framebuffers.clear();
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
     for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
-      ASSIGN_OR_RETURN(_framebuffers[i],
+      ASSIGN_OR_RETURN(Framebuffer framebuffer,
                        Framebuffer::createFromSwapchain(
                            commandBuffer, _renderPass, _swapchain.getExtent(),
                            _swapchain.getSwapchainVkImageView(i),
                            _attachments));
+	  _framebuffers.push_back(std::move(framebuffer));
     }
   }
 

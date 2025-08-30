@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bejzak_engine/common/camera/camera.h"
-#include "bejzak_engine/common/camera/perspective_projection.h"
+#include "bejzak_engine/common/camera/projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
 #include "bejzak_engine/common/object/object.h"
@@ -100,7 +100,6 @@ class Application {
   Buffer _lightBuffer;
   BufferHandle _lightHandle;
 
-  std::shared_ptr<PerspectiveProjection> _projection;
   Camera _camera;
 
   std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1>
