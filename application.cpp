@@ -620,11 +620,12 @@ void Application::run() {
   std::chrono::steady_clock::time_point previous;
 
   while (_window->open()) {
-    float deltaTime = std::chrono::duration<float>(
-                          std::chrono::steady_clock::now() - previous)
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    const float deltaTime = std::chrono::duration<float>(
+                          now - previous)
                           .count();
     std::println("{}", 1.0f / deltaTime);
-    previous = std::chrono::steady_clock::now();
+    previous = now;
     _window->pollEvents();
     _camera.updateFromKeyboard(*_mouseKeyboardManager, deltaTime);
     draw();
