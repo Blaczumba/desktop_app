@@ -104,9 +104,9 @@ class Application {
 
   std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1>
       _commandPools;
-  std::vector<PrimaryCommandBuffer> _primaryCommandBuffer;
+  std::array<PrimaryCommandBuffer, MAX_FRAMES_IN_FLIGHT> _primaryCommandBuffer;
   std::array<std::array<SecondaryCommandBuffer, MAX_FRAMES_IN_FLIGHT>,
-             MAX_THREADS_IN_POOL>
+             MAX_FRAMES_IN_FLIGHT>
       _commandBuffers;
 
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _imageAvailableSemaphores;
@@ -145,5 +145,6 @@ private:
   Status createShadowResources();
 
   Status loadObjects();
+  Status createOctreeScene();
   Status loadCubemap();
 };

@@ -177,11 +177,13 @@ std::string_view errorToString(const ErrorType &error) {
 
 Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
     : _camera(PerspectiveProjection{ glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f }, glm::vec3(0.0f), 5.5f, 0.01f),
-      _assetManager(fileLoader), _programManager(fileLoader) {
+      _programManager(fileLoader) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
                  errorToString(status.error()));
   }
+
+  _assetManager = AssetManager(_logicalDevice, fileLoader);
 
   if (Status status = loadCubemap(); !status) {
     std::println("Failed to load cubemap: {}", errorToString(status.error()));
@@ -194,6 +196,11 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
 
   if (Status status = loadObjects(); !status) {
     std::println("Failed to load objects: {}", errorToString(status.error()));
+  }
+
+  if (Status status = createOctreeScene(); !status) {
+	  std::println("Failed to create octree scene: {}",
+		  errorToString(status.error()));
   }
 
   if (Status status = createPresentResources(); !status) {
@@ -280,17 +287,16 @@ void Application::setInput() {
 }
 
 Status Application::loadCubemap() {
-  _assetManager.loadImageAsync(_logicalDevice, TEXTURES_PATH
+  _assetManager.loadImageAsync(TEXTURES_PATH
                                       "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
   auto fileLoader = std::make_unique<StandardFileLoader>();
-  ASSIGN_OR_RETURN(std::istringstream data,
-                   fileLoader->loadFileToStringStream(MODELS_PATH "cube.obj"));
+  ASSIGN_OR_RETURN(std::string data,
+                   fileLoader->loadFileToString(MODELS_PATH "cube.obj"));
   ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(data));
 
-  _assetManager.loadVertexDataAsync(
-      _logicalDevice, "cube.obj", vertexDataCube.indices,
-      static_cast<uint8_t>(vertexDataCube.indexType),
+  _assetManager.loadVertexDataAsync("cube.obj", vertexDataCube.indices,
+      vertexDataCube.indexSize,
       std::span<const glm::vec3>(vertexDataCube.positions));
 
   {
@@ -325,25 +331,25 @@ Status Application::loadCubemap() {
 
 Status Application::loadObjects() {
   // TODO needs refactoring
-  ASSIGN_OR_RETURN(auto sceneData, LoadGltf(MODELS_PATH "sponza/scene.gltf"));
+  ASSIGN_OR_RETURN(auto sceneData, LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
 
   for (uint32_t i = 0; i < sceneData.size(); i++) {
-    if (sceneData[i].normalTexture.empty() ||
-        sceneData[i].metallicRoughnessTexture.empty()) {
+	const VertexData& object = sceneData[i];
+    if (object.normalTexture.empty() ||
+        object.metallicRoughnessTexture.empty()) {
       continue;
     }
     _assetManager.loadImageAsync(
-        _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].diffuseTexture);
-    _assetManager.loadImageAsync(_logicalDevice,
-                                   MODELS_PATH "sponza/" +
-                                       sceneData[i].metallicRoughnessTexture);
+        MODELS_PATH "sponza/" + object.diffuseTexture);
     _assetManager.loadImageAsync(
-        _logicalDevice, MODELS_PATH "sponza/" + sceneData[i].normalTexture);
-    _assetManager.loadVertexDataInterleavingAsync(
-        _logicalDevice, std::to_string(i), sceneData[i].indices,
-        static_cast<uint8_t>(sceneData[i].indexType), sceneData[i].positions,
-        sceneData[i].textureCoordinates, sceneData[i].normals,
-        sceneData[i].tangents);
+                                   MODELS_PATH "sponza/" +
+        object.metallicRoughnessTexture);
+    _assetManager.loadImageAsync(
+        MODELS_PATH "sponza/" + object.normalTexture);
+    std::any dummy = std::make_shared<int>(20);
+    _assetManager.loadVertexDataInterleavingAsync(dummy, std::to_string(i), object.indices,
+        object.indexSize, object.positions,
+        object.textureCoordinates, object.normals);
   }
 
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
@@ -360,10 +366,6 @@ Status Application::loadObjects() {
         continue;
       const std::string diffusePath =
           MODELS_PATH "sponza/" + sceneData[i].diffuseTexture;
-      const std::string metallicRoughnessPath =
-          MODELS_PATH "sponza/" + sceneData[i].metallicRoughnessTexture;
-      const std::string normalPath =
-          MODELS_PATH "sponza/" + sceneData[i].normalTexture;
       if (!_textures.contains(diffusePath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(diffusePath));
@@ -375,6 +377,8 @@ Status Application::loadObjects() {
                           std::make_pair(_bindlessWriter->storeTexture(texture),
                                          std::move(texture)));
       }
+      const std::string normalPath =
+          MODELS_PATH "sponza/" + sceneData[i].normalTexture;
       if (!_textures.contains(normalPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(normalPath));
@@ -386,6 +390,8 @@ Status Application::loadObjects() {
                           std::make_pair(_bindlessWriter->storeTexture(texture),
                                          std::move(texture)));
       }
+      const std::string metallicRoughnessPath =
+          MODELS_PATH "sponza/" + sceneData[i].metallicRoughnessTexture;
       if (!_textures.contains(metallicRoughnessPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(metallicRoughnessPath));
@@ -434,22 +440,25 @@ Status Application::loadObjects() {
     }
   }
 
-  // TODO: Move it to separate function!
-  AABB sceneAABB =
-      _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
-
-  for (int i = 1; i < _objects.size(); ++i) {
-    sceneAABB.extend(
-        _registry.getComponent<MeshComponent>(_objects[i].getEntity()).aabb);
-  }
-  _octree = std::make_unique<Octree>(sceneAABB);
-
-  for (const Object &object : _objects)
-    _octree->addObject(
-        &object,
-        _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
-
   return StatusOk();
+}
+
+Status Application::createOctreeScene() {
+    AABB sceneAABB =
+        _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
+
+    for (int i = 1; i < _objects.size(); ++i) {
+        sceneAABB.extend(
+            _registry.getComponent<MeshComponent>(_objects[i].getEntity()).aabb);
+    }
+    _octree = std::make_unique<Octree>(sceneAABB);
+
+    for (const Object& object : _objects)
+        _octree->addObject(
+            &object,
+            _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
+
+    return StatusOk();
 }
 
 Status Application::createDescriptorSets() {
@@ -525,14 +534,8 @@ Status Application::createPresentResources() {
   attachmentsLayout
       .addColorResolvePresentAttachment(swapchainImageFormat,
                                         VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-      //              .addColorResolveAttachment(swapchainImageFormat,
-      //              VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      //              VK_ATTACHMENT_STORE_OP_STORE)
       .addColorAttachment(swapchainImageFormat, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                           VK_ATTACHMENT_STORE_OP_DONT_CARE)
-      //              .addColorAttachment(swapchainImageFormat,
-      //              VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      //              VK_ATTACHMENT_STORE_OP_DONT_CARE)
       .addDepthAttachment(VK_FORMAT_D24_UNORM_S8_UINT,
                           VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
@@ -696,9 +699,9 @@ void Application::draw() {
 }
 
 Status Application::createSyncObjects() {
-  const VkSemaphoreCreateInfo semaphoreInfo = {
+  static constexpr VkSemaphoreCreateInfo semaphoreInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-  const VkFenceCreateInfo fenceInfo = {.sType =
+  static constexpr VkFenceCreateInfo fenceInfo = {.sType =
                                            VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
                                        .flags = VK_FENCE_CREATE_SIGNALED_BIT};
 
@@ -728,8 +731,7 @@ Status Application::createCommandBuffers() {
   }
   ASSIGN_OR_RETURN(
       _primaryCommandBuffer,
-      _commandPools[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers(
-          MAX_FRAMES_IN_FLIGHT));
+      _commandPools[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
   for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
     ASSIGN_OR_RETURN(
         _commandBuffers[i],
