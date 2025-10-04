@@ -331,41 +331,17 @@ Status Application::loadCubemap() {
 
 Status Application::loadObjects() {
   // TODO needs refactoring
-  ASSIGN_OR_RETURN(auto sceneData, LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
-
-  for (uint32_t i = 0; i < sceneData.size(); i++) {
-	const VertexData& object = sceneData[i];
-    if (object.normalTexture.empty() ||
-        object.metallicRoughnessTexture.empty()) {
-      continue;
-    }
-    _assetManager.loadImageAsync(
-        MODELS_PATH "sponza/" + object.diffuseTexture);
-    _assetManager.loadImageAsync(
-                                   MODELS_PATH "sponza/" +
-        object.metallicRoughnessTexture);
-    _assetManager.loadImageAsync(
-        MODELS_PATH "sponza/" + object.normalTexture);
-    std::any dummy = std::make_shared<int>(20);
-    _assetManager.loadVertexDataInterleavingAsync(dummy, std::to_string(i), object.indices,
-        object.indexSize, object.positions,
-        object.textureCoordinates, object.normals);
-  }
-
+  ASSIGN_OR_RETURN(const std::vector<VertexData> sceneData, LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
-
   _objects.reserve(sceneData.size());
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    for (uint32_t i = 0; i < sceneData.size(); i++) {
+    for (const VertexData& sceneObject : sceneData) {
       Entity e = _registry.createEntity();
-      if (sceneData[i].normalTexture.empty() ||
-          sceneData[i].metallicRoughnessTexture.empty())
-        continue;
       const std::string diffusePath =
-          MODELS_PATH "sponza/" + sceneData[i].diffuseTexture;
+          MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
       if (!_textures.contains(diffusePath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(diffusePath));
@@ -378,7 +354,7 @@ Status Application::loadObjects() {
                                          std::move(texture)));
       }
       const std::string normalPath =
-          MODELS_PATH "sponza/" + sceneData[i].normalTexture;
+          MODELS_PATH "sponza/" + sceneObject.normalTexture;
       if (!_textures.contains(normalPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(normalPath));
@@ -391,7 +367,7 @@ Status Application::loadObjects() {
                                          std::move(texture)));
       }
       const std::string metallicRoughnessPath =
-          MODELS_PATH "sponza/" + sceneData[i].metallicRoughnessTexture;
+          MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
       if (!_textures.contains(metallicRoughnessPath)) {
         ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
                          _assetManager.getImageData(metallicRoughnessPath));
@@ -403,13 +379,13 @@ Status Application::loadObjects() {
                           std::make_pair(_bindlessWriter->storeTexture(texture),
                                          std::move(texture)));
       }
-      _objects.emplace_back("Object", e);
+      _objects.emplace_back("", e);
       _registry.addComponent<MaterialComponent>(
           e, MaterialComponent{_textures[diffusePath].first,
                                _textures[normalPath].first,
                                _textures[metallicRoughnessPath].first});
       ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                       _assetManager.getVertexData(std::to_string(i)));
+                       _assetManager.getVertexData(sceneObject.vertexResource));
       MeshComponent msh;
       ASSIGN_OR_RETURN(msh.vertexBuffer,
                        Buffer::createVertexBuffer(
@@ -429,11 +405,11 @@ Status Application::loadObjects() {
           commandBuffer, vData.vertexBufferPositions));
       msh.indexType = vData.indexType;
       msh.aabb =
-          createAABBfromVertices(sceneData[i].positions, sceneData[i].model);
+          createAABBfromVertices(sceneObject.positions, sceneObject.model);
       _registry.addComponent<MeshComponent>(e, std::move(msh));
 
       TransformComponent trsf;
-      trsf.model = sceneData[i].model;
+      trsf.model = sceneObject.model;
       _registry.addComponent<TransformComponent>(e, std::move(trsf));
 
       _entityToIndex.emplace(e, index);
