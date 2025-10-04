@@ -10,8 +10,8 @@
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/file/standard_file_loader.h"
 #include "bejzak_engine/common/model_loader/model_loader.h"
-#include "bejzak_engine/common/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/common/model_loader/obj_loader/obj_loader.h"
+#include "bejzak_engine/common/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/util/vertex_builder.h"
 #include "bejzak_engine/common/window/window_glfw.h"
@@ -29,29 +29,28 @@
 
 namespace {
 
-lib::Buffer<VkBufferImageCopy> createBufferImageCopyRegions(
-    std::span<const ImageSubresource> subresources) {
+lib::Buffer<VkBufferImageCopy>
+createBufferImageCopyRegions(std::span<const ImageSubresource> subresources) {
   lib::Buffer<VkBufferImageCopy> regions(subresources.size());
-  std::transform(subresources.cbegin(), subresources.cend(), regions.begin(),
-                 [](const ImageSubresource& subresource) {
-                   return VkBufferImageCopy{
-                       .bufferOffset = subresource.offset,
-                       .imageSubresource = {
-                           .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                           .mipLevel = subresource.mipLevel,
-                           .baseArrayLayer = subresource.baseArrayLayer,
-                           .layerCount = subresource.layerCount},
-                       .imageExtent = {
-                           .width = subresource.width,
-                           .height = subresource.height,
-                           .depth = subresource.depth}};
-                 });
+  std::transform(
+      subresources.cbegin(), subresources.cend(), regions.begin(),
+      [](const ImageSubresource &subresource) {
+        return VkBufferImageCopy{
+            .bufferOffset = subresource.offset,
+            .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                 .mipLevel = subresource.mipLevel,
+                                 .baseArrayLayer = subresource.baseArrayLayer,
+                                 .layerCount = subresource.layerCount},
+            .imageExtent = {.width = subresource.width,
+                            .height = subresource.height,
+                            .depth = subresource.depth}};
+      });
   return regions;
 }
 
 ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
-                               const AssetManager::ImageData& imageData,
+                               const AssetManager::ImageData &imageData,
                                VkFormat format, float samplerAnisotropy) {
   return TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
@@ -63,7 +62,8 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
       .withMaxAnisotropy(samplerAnisotropy)
       .withMaxLod(static_cast<float>(imageData.mipLevels))
       .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-      .buildImage(logicalDevice, commandBuffer, imageData.stagingBuffer.getVkBuffer(),
+      .buildImage(logicalDevice, commandBuffer,
+                  imageData.stagingBuffer.getVkBuffer(),
                   createBufferImageCopyRegions(imageData.copyRegions));
 }
 
@@ -97,8 +97,9 @@ ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
       .withMaxAnisotropy(samplerAnisotropy)
       .withMaxLod(static_cast<float>(imageData.mipLevels))
-      .buildMipmapImage(logicalDevice, commandBuffer, imageData.stagingBuffer.getVkBuffer(),
-          createBufferImageCopyRegions(imageData.copyRegions));
+      .buildMipmapImage(logicalDevice, commandBuffer,
+                        imageData.stagingBuffer.getVkBuffer(),
+                        createBufferImageCopyRegions(imageData.copyRegions));
 }
 
 constexpr std::string_view engineErrorToString(EngineError error) {
@@ -176,7 +177,9 @@ std::string_view errorToString(const ErrorType &error) {
 } // namespace
 
 Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
-    : _camera(PerspectiveProjection{ glm::radians(45.0f), 1920.0f / 1080.f, 0.01f, 50.0f }, glm::vec3(0.0f), 5.5f, 0.01f),
+    : _camera(PerspectiveProjection{glm::radians(45.0f), 1920.0f / 1080.f,
+                                    0.01f, 50.0f},
+              glm::vec3(0.0f), 5.5f, 0.01f),
       _programManager(fileLoader) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
@@ -199,8 +202,8 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
   }
 
   if (Status status = createOctreeScene(); !status) {
-	  std::println("Failed to create octree scene: {}",
-		  errorToString(status.error()));
+    std::println("Failed to create octree scene: {}",
+                 errorToString(status.error()));
   }
 
   if (Status status = createPresentResources(); !status) {
@@ -287,16 +290,15 @@ void Application::setInput() {
 }
 
 Status Application::loadCubemap() {
-  _assetManager.loadImageAsync(TEXTURES_PATH
-                                      "cubemap_yokohama_rgba.ktx");
+  _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
   auto fileLoader = std::make_unique<StandardFileLoader>();
   ASSIGN_OR_RETURN(std::string data,
                    fileLoader->loadFileToString(MODELS_PATH "cube.obj"));
   ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(data));
 
-  _assetManager.loadVertexDataAsync("cube.obj", vertexDataCube.indices,
-      vertexDataCube.indexSize,
+  _assetManager.loadVertexDataAsync(
+      "cube.obj", vertexDataCube.indices, vertexDataCube.indexSize,
       std::span<const glm::vec3>(vertexDataCube.positions));
 
   {
@@ -306,9 +308,11 @@ Status Application::loadCubemap() {
     ASSIGN_OR_RETURN(
         const AssetManager::ImageData &imageData,
         _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
-    
-    ASSIGN_OR_RETURN(_textureCubemap, createCubemap(_logicalDevice, commandBuffer, imageData,
-        VK_FORMAT_R8G8B8A8_UNORM, _physicalDevice->getMaxSamplerAnisotropy()));
+
+    ASSIGN_OR_RETURN(_textureCubemap,
+                     createCubemap(_logicalDevice, commandBuffer, imageData,
+                                   VK_FORMAT_R8G8B8A8_UNORM,
+                                   _physicalDevice->getMaxSamplerAnisotropy()));
 
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
                      _assetManager.getVertexData("cube.obj"));
@@ -331,110 +335,109 @@ Status Application::loadCubemap() {
 
 Status Application::loadObjects() {
   // TODO needs refactoring
-  ASSIGN_OR_RETURN(const std::vector<VertexData> sceneData, LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
+  ASSIGN_OR_RETURN(
+      const std::vector<VertexData> sceneData,
+      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
-  {
-    SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-    const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    for (const VertexData& sceneObject : sceneData) {
-      Entity e = _registry.createEntity();
-      const std::string diffusePath =
-          MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
-      if (!_textures.contains(diffusePath)) {
-        ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager.getImageData(diffusePath));
-        ASSIGN_OR_RETURN(Texture texture,
-                         createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData, VK_FORMAT_R8G8B8A8_SRGB,
-                                         maxSamplerAnisotropy));
-        _textures.emplace(diffusePath,
-                          std::make_pair(_bindlessWriter->storeTexture(texture),
-                                         std::move(texture)));
-      }
-      const std::string normalPath =
-          MODELS_PATH "sponza/" + sceneObject.normalTexture;
-      if (!_textures.contains(normalPath)) {
-        ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager.getImageData(normalPath));
-        ASSIGN_OR_RETURN(Texture texture,
-                         createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData, VK_FORMAT_R8G8B8A8_UNORM,
-                                         maxSamplerAnisotropy));
-        _textures.emplace(normalPath,
-                          std::make_pair(_bindlessWriter->storeTexture(texture),
-                                         std::move(texture)));
-      }
-      const std::string metallicRoughnessPath =
-          MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
-      if (!_textures.contains(metallicRoughnessPath)) {
-        ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                         _assetManager.getImageData(metallicRoughnessPath));
-        ASSIGN_OR_RETURN(Texture texture,
-                         createTexture2D(_logicalDevice, commandBuffer,
-                                         imgData, VK_FORMAT_R8G8B8A8_UNORM,
-                                         maxSamplerAnisotropy));
-        _textures.emplace(metallicRoughnessPath,
-                          std::make_pair(_bindlessWriter->storeTexture(texture),
-                                         std::move(texture)));
-      }
-      _objects.emplace_back("", e);
-      _registry.addComponent<MaterialComponent>(
-          e, MaterialComponent{_textures[diffusePath].first,
-                               _textures[normalPath].first,
-                               _textures[metallicRoughnessPath].first});
-      ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                       _assetManager.getVertexData(sceneObject.vertexResource));
-      MeshComponent msh;
-      ASSIGN_OR_RETURN(msh.vertexBuffer,
-                       Buffer::createVertexBuffer(
-                           _logicalDevice, vData.vertexBuffer.getSize()));
-      RETURN_IF_ERROR(
-          msh.vertexBuffer.copyBuffer(commandBuffer, vData.vertexBuffer));
-      ASSIGN_OR_RETURN(msh.indexBuffer,
-                       Buffer::createIndexBuffer(_logicalDevice,
-                                                 vData.indexBuffer.getSize()));
-      RETURN_IF_ERROR(
-          msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer));
-      ASSIGN_OR_RETURN(
-          msh.vertexBufferPrimitive,
-          Buffer::createVertexBuffer(_logicalDevice,
-                                     vData.vertexBufferPositions.getSize()));
-      RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(
-          commandBuffer, vData.vertexBufferPositions));
-      msh.indexType = vData.indexType;
-      msh.aabb =
-          createAABBfromVertices(sceneObject.positions, sceneObject.model);
-      _registry.addComponent<MeshComponent>(e, std::move(msh));
-
-      TransformComponent trsf;
-      trsf.model = sceneObject.model;
-      _registry.addComponent<TransformComponent>(e, std::move(trsf));
-
-      _entityToIndex.emplace(e, index);
+  SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
+  const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
+  for (const VertexData &sceneObject : sceneData) {
+    Entity e = _registry.createEntity();
+    const std::string diffusePath =
+        MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
+    if (!_textures.contains(diffusePath)) {
+      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
+                       _assetManager.getImageData(diffusePath));
+      ASSIGN_OR_RETURN(Texture texture,
+                       createTexture2D(_logicalDevice, commandBuffer, imgData,
+                                       VK_FORMAT_R8G8B8A8_SRGB,
+                                       maxSamplerAnisotropy));
+      _textures.emplace(diffusePath,
+                        std::make_pair(_bindlessWriter->storeTexture(texture),
+                                       std::move(texture)));
     }
+    const std::string normalPath =
+        MODELS_PATH "sponza/" + sceneObject.normalTexture;
+    if (!_textures.contains(normalPath)) {
+      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
+                       _assetManager.getImageData(normalPath));
+      ASSIGN_OR_RETURN(Texture texture,
+                       createTexture2D(_logicalDevice, commandBuffer, imgData,
+                                       VK_FORMAT_R8G8B8A8_UNORM,
+                                       maxSamplerAnisotropy));
+      _textures.emplace(normalPath,
+                        std::make_pair(_bindlessWriter->storeTexture(texture),
+                                       std::move(texture)));
+    }
+    const std::string metallicRoughnessPath =
+        MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
+    if (!_textures.contains(metallicRoughnessPath)) {
+      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
+                       _assetManager.getImageData(metallicRoughnessPath));
+      ASSIGN_OR_RETURN(Texture texture,
+                       createTexture2D(_logicalDevice, commandBuffer, imgData,
+                                       VK_FORMAT_R8G8B8A8_UNORM,
+                                       maxSamplerAnisotropy));
+      _textures.emplace(metallicRoughnessPath,
+                        std::make_pair(_bindlessWriter->storeTexture(texture),
+                                       std::move(texture)));
+    }
+    _objects.emplace_back("", e);
+    _registry.addComponent<MaterialComponent>(
+        e, MaterialComponent{_textures[diffusePath].first,
+                             _textures[normalPath].first,
+                             _textures[metallicRoughnessPath].first});
+    ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
+                     _assetManager.getVertexData(sceneObject.vertexResource));
+    MeshComponent msh;
+    ASSIGN_OR_RETURN(msh.vertexBuffer,
+                     Buffer::createVertexBuffer(_logicalDevice,
+                                                vData.vertexBuffer.getSize()));
+    RETURN_IF_ERROR(
+        msh.vertexBuffer.copyBuffer(commandBuffer, vData.vertexBuffer));
+    ASSIGN_OR_RETURN(
+        msh.indexBuffer,
+        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize()));
+    RETURN_IF_ERROR(
+        msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer));
+    ASSIGN_OR_RETURN(
+        msh.vertexBufferPrimitive,
+        Buffer::createVertexBuffer(_logicalDevice,
+                                   vData.vertexBufferPositions.getSize()));
+    RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(
+        commandBuffer, vData.vertexBufferPositions));
+    msh.indexType = vData.indexType;
+    msh.aabb = createAABBfromVertices(sceneObject.positions, sceneObject.model);
+    _registry.addComponent<MeshComponent>(e, std::move(msh));
+
+    TransformComponent trsf;
+    trsf.model = sceneObject.model;
+    _registry.addComponent<TransformComponent>(e, std::move(trsf));
+
+    _entityToIndex.emplace(e, index);
   }
 
   return StatusOk();
 }
 
 Status Application::createOctreeScene() {
-    AABB sceneAABB =
-        _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
+  AABB sceneAABB =
+      _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
 
-    for (int i = 1; i < _objects.size(); ++i) {
-        sceneAABB.extend(
-            _registry.getComponent<MeshComponent>(_objects[i].getEntity()).aabb);
-    }
-    _octree = std::make_unique<Octree>(sceneAABB);
+  for (int i = 1; i < _objects.size(); ++i) {
+    sceneAABB.extend(
+        _registry.getComponent<MeshComponent>(_objects[i].getEntity()).aabb);
+  }
+  _octree = std::make_unique<Octree>(sceneAABB);
 
-    for (const Object& object : _objects)
-        _octree->addObject(
-            &object,
-            _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
+  for (const Object &object : _objects)
+    _octree->addObject(
+        &object,
+        _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
 
-    return StatusOk();
+  return StatusOk();
 }
 
 Status Application::createDescriptorSets() {
@@ -599,10 +602,10 @@ void Application::run() {
   std::chrono::steady_clock::time_point previous;
 
   while (_window->open()) {
-	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-    const float deltaTime = std::chrono::duration<float>(
-                          now - previous)
-                          .count();
+    const std::chrono::steady_clock::time_point now =
+        std::chrono::steady_clock::now();
+    const float deltaTime =
+        std::chrono::duration<float>(now - previous).count();
     std::println("{}", 1.0f / deltaTime);
     previous = now;
     _window->pollEvents();
@@ -677,9 +680,9 @@ void Application::draw() {
 Status Application::createSyncObjects() {
   static constexpr VkSemaphoreCreateInfo semaphoreInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-  static constexpr VkFenceCreateInfo fenceInfo = {.sType =
-                                           VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                                       .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+  static constexpr VkFenceCreateInfo fenceInfo = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .flags = VK_FENCE_CREATE_SIGNALED_BIT};
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     CHECK_VKCMD(vkCreateSemaphore(_logicalDevice.getVkDevice(), &semaphoreInfo,
@@ -705,9 +708,9 @@ Status Application::createCommandBuffers() {
   for (int i = 0; i < MAX_THREADS_IN_POOL + 1; i++) {
     ASSIGN_OR_RETURN(_commandPools[i], CommandPool::create(_logicalDevice));
   }
-  ASSIGN_OR_RETURN(
-      _primaryCommandBuffer,
-      _commandPools[MAX_THREADS_IN_POOL]->createPrimaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
+  ASSIGN_OR_RETURN(_primaryCommandBuffer,
+                   _commandPools[MAX_THREADS_IN_POOL]
+                       ->createPrimaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
   for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
     ASSIGN_OR_RETURN(
         _commandBuffers[i],
@@ -992,9 +995,10 @@ Status Application::recreateSwapChain() {
   }
 
   Projection oldProjection = _camera.getProjection();
-  if (auto projection = std::get_if<PerspectiveProjection>(&oldProjection); projection != nullptr) {
-	  projection->aspect = static_cast<float>(extent.width) / extent.height;
-	  _camera.setProjection(*projection);
+  if (auto projection = std::get_if<PerspectiveProjection>(&oldProjection);
+      projection != nullptr) {
+    projection->aspect = static_cast<float>(extent.width) / extent.height;
+    _camera.setProjection(*projection);
   }
   vkDeviceWaitIdle(_logicalDevice.getVkDevice());
 
@@ -1015,7 +1019,7 @@ Status Application::recreateSwapChain() {
                            commandBuffer, _renderPass, _swapchain.getExtent(),
                            _swapchain.getSwapchainVkImageView(i),
                            _attachments));
-	  _framebuffers.push_back(std::move(framebuffer));
+      _framebuffers.push_back(std::move(framebuffer));
     }
   }
 
