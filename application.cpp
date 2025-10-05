@@ -295,11 +295,7 @@ Status Application::loadCubemap() {
   auto fileLoader = std::make_unique<StandardFileLoader>();
   ASSIGN_OR_RETURN(std::string data,
                    fileLoader->loadFileToString(MODELS_PATH "cube.obj"));
-  ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(data));
-
-  _assetManager.loadVertexDataAsync(
-      "cube.obj", vertexDataCube.indices, vertexDataCube.indexSize,
-      std::span<const glm::vec3>(vertexDataCube.positions));
+  ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(_assetManager, "cube.obj", data));
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
