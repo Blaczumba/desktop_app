@@ -47,11 +47,7 @@ class Application {
   std::unique_ptr<CommandPool> _singleTimeCommandPool;
   ShaderProgramManager _programManager;
 
-  uint32_t index = 0;
   std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
-  std::unordered_map<std::string, Buffer> _vertexBufferMap;
-  std::unordered_map<std::string, Buffer> _indexBufferMap;
-  std::unordered_map<Entity, uint32_t> _entityToIndex;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;

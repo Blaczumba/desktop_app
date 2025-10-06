@@ -295,7 +295,8 @@ Status Application::loadCubemap() {
   auto fileLoader = std::make_unique<StandardFileLoader>();
   ASSIGN_OR_RETURN(std::string data,
                    fileLoader->loadFileToString(MODELS_PATH "cube.obj"));
-  ASSIGN_OR_RETURN(const VertexData vertexDataCube, loadObj(_assetManager, "cube.obj", data));
+  ASSIGN_OR_RETURN(const VertexData vertexDataCube,
+                   loadObj(_assetManager, "cube.obj", data));
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -340,7 +341,6 @@ Status Application::loadObjects() {
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
   for (const VertexData &sceneObject : sceneData) {
-    Entity e = _registry.createEntity();
     const std::string diffusePath =
         MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
     if (!_textures.contains(diffusePath)) {
@@ -380,6 +380,7 @@ Status Application::loadObjects() {
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
     }
+    Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
         e, MaterialComponent{_textures[diffusePath].first,
@@ -411,8 +412,6 @@ Status Application::loadObjects() {
     TransformComponent trsf;
     trsf.model = sceneObject.model;
     _registry.addComponent<TransformComponent>(e, std::move(trsf));
-
-    _entityToIndex.emplace(e, index);
   }
 
   return StatusOk();
