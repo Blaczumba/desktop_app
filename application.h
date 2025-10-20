@@ -35,9 +35,7 @@ class Application {
   static constexpr uint32_t MAX_THREADS_IN_POOL = 2;
 
   Instance _instance;
-#ifdef VALIDATION_LAYERS_ENABLED
   DebugMessenger _debugMessenger;
-#endif // VALIDATION_LAYERS_ENABLED
   std::shared_ptr<Window> _window;
   std::unique_ptr<const MouseKeyboardManager> _mouseKeyboardManager;
   Surface _surface;
@@ -112,7 +110,7 @@ class Application {
   uint32_t _currentFrame = 0;
 
 public:
-  Application(const std::shared_ptr<FileLoader>& fileLoader);
+  Application(const std::shared_ptr<FileLoader> &fileLoader);
   ~Application();
 
   Application(const Application &) = delete;

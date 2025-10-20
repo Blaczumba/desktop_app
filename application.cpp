@@ -354,6 +354,7 @@ Status Application::loadObjects() {
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
     }
+
     const std::string normalPath =
         MODELS_PATH "sponza/" + sceneObject.normalTexture;
     if (!_textures.contains(normalPath)) {
@@ -367,6 +368,7 @@ Status Application::loadObjects() {
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
     }
+
     const std::string metallicRoughnessPath =
         MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
     if (!_textures.contains(metallicRoughnessPath)) {
@@ -380,6 +382,7 @@ Status Application::loadObjects() {
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
     }
+
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
@@ -436,15 +439,6 @@ Status Application::createOctreeScene() {
 }
 
 Status Application::createDescriptorSets() {
-  {
-    // TODO: Should not be in this function.
-    SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-    const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    ASSIGN_OR_RETURN(_shadowMap,
-                     createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
-                                     1024 * 2, VK_FORMAT_D32_SFLOAT));
-  }
-
   const uint32_t size = _logicalDevice.getPhysicalDevice().getMemoryAlignment(
       sizeof(UniformBufferCamera));
   ASSIGN_OR_RETURN(
@@ -455,8 +449,6 @@ Status Application::createDescriptorSets() {
                    _programManager.createPBRProgram(_logicalDevice));
   ASSIGN_OR_RETURN(_skyboxShaderProgram,
                    _programManager.createSkyboxProgram(_logicalDevice));
-  ASSIGN_OR_RETURN(_shadowShaderProgram,
-                   _programManager.createShadowProgram(_logicalDevice));
 
   ASSIGN_OR_RETURN(
       _descriptorPool,
@@ -475,7 +467,6 @@ Status Application::createDescriptorSets() {
           _programManager.getVkDescriptorSetLayout(DescriptorSetType::CAMERA)));
   _bindlessWriter =
       std::make_unique<BindlessDescriptorSetWriter>(_bindlessDescriptorSet);
-  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
   _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
 
   _dynamicDescriptorSetWriter.storeDynamicBuffer(_dynamicUniformBuffersCamera,
@@ -483,8 +474,9 @@ Status Application::createDescriptorSets() {
   _dynamicDescriptorSetWriter.writeDescriptorSet(
       _logicalDevice.getVkDevice(), _dynamicDescriptorSet.getVkDescriptorSet());
 
-  ASSIGN_OR_RETURN(_lightBuffer, Buffer::createUniformBuffer(_logicalDevice,
-                                                             sizeof(_ubLight)));
+  ASSIGN_OR_RETURN(
+      _lightBuffer,
+      Buffer::createUniformBuffer(_logicalDevice, sizeof(UniformBufferLight)));
   _lightHandle = _bindlessWriter->storeBuffer(_lightBuffer);
 
   _ubLight.pos = glm::vec3(15.1891f, 2.66408f, -0.841221f);
@@ -501,7 +493,7 @@ Status Application::createDescriptorSets() {
 }
 
 Status Application::createPresentResources() {
-  const VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
+  static constexpr VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
   const VkFormat swapchainImageFormat = _swapchain.getVkFormat();
 
   AttachmentLayout attachmentsLayout(msaaSamples);
@@ -538,24 +530,32 @@ Status Application::createPresentResources() {
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
-  {
-    const GraphicsPipelineParameters parameters = {
+  static constexpr GraphicsPipelineParameters pbrPipelineParameters = {
         .msaaSamples = msaaSamples,
         // .patchControlPoints = 3,
-    };
-    _graphicsPipeline = std::make_unique<GraphicsPipeline>(
-        _renderPass, _pbrShaderProgram, parameters);
-  }
-  {
-    const GraphicsPipelineParameters parameters = {
-        .cullMode = VK_CULL_MODE_FRONT_BIT, .msaaSamples = msaaSamples};
-    _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(
-        _renderPass, _skyboxShaderProgram, parameters);
-  }
+  };
+  _graphicsPipeline = std::make_unique<GraphicsPipeline>(
+      _renderPass, _pbrShaderProgram, pbrPipelineParameters);
+  static constexpr GraphicsPipelineParameters skyboxPipelineParameters = {
+      .cullMode = VK_CULL_MODE_FRONT_BIT, .msaaSamples = msaaSamples };
+  _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(
+      _renderPass, _skyboxShaderProgram, skyboxPipelineParameters);
   return StatusOk();
 }
 
 Status Application::createShadowResources() {
+  {
+    // TODO: Should not be in this function.
+    SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
+    const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
+    ASSIGN_OR_RETURN(_shadowMap,
+                     createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
+                                     1024 * 2, VK_FORMAT_D32_SFLOAT));
+  }
+  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
+
+  ASSIGN_OR_RETURN(_shadowShaderProgram,
+                   _programManager.createShadowProgram(_logicalDevice));
   AttachmentLayout attachmentLayout;
   attachmentLayout.addShadowAttachment(
       VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -591,8 +591,7 @@ void Application::run() {
   updateUniformBuffer(_currentFrame);
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-    VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    recordShadowCommandBuffer(commandBuffer, 0);
+    recordShadowCommandBuffer(handle.getCommandBuffer(), 0);
   }
   std::chrono::steady_clock::time_point previous;
 
