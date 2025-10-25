@@ -48,7 +48,7 @@ createBufferImageCopyRegions(std::span<const ImageSubresource> subresources) {
   return regions;
 }
 
-ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
+ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
                                const AssetManager::ImageData &imageData,
                                VkFormat format, float samplerAnisotropy) {
@@ -59,12 +59,28 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
       .withMipLevels(imageData.mipLevels)
       .withUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
       .withLayerCount(6)
+      .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
       .withMaxAnisotropy(samplerAnisotropy)
       .withMaxLod(static_cast<float>(imageData.mipLevels))
       .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
       .buildImage(logicalDevice, commandBuffer,
                   imageData.stagingBuffer.getVkBuffer(),
                   createBufferImageCopyRegions(imageData.copyRegions));
+}
+
+ErrorOr<Texture> createCubemap(const LogicalDevice& logicalDevice,
+	VkCommandBuffer commandBuffer, VkImageAspectFlags aspect, VkFormat format, VkImageUsageFlags additionalUsage,
+    float samplerAnisotropy) {
+	return TextureBuilder()
+		.withAspect(aspect)
+		.withExtent(1024, 1024)
+		.withFormat(format)
+		.withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | additionalUsage)
+		.withLayerCount(6)
+		.withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
+		.withMaxAnisotropy(samplerAnisotropy)
+		.withNumSamples(VK_SAMPLE_COUNT_1_BIT)
+		.buildAttachment(logicalDevice, commandBuffer);
 }
 
 ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
@@ -225,6 +241,11 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
     std::println("Failed to create sync objects: {}",
                  errorToString(status.error()));
   }
+
+  if (Status status = createMirrorCubemap(); !status) {
+	  std::println("Failed to create mirror cubemap: {}",
+		  errorToString(status.error()));
+  }
   setInput();
 }
 
@@ -289,6 +310,44 @@ void Application::setInput() {
       });
 }
 
+Status Application::createMirrorCubemap() {
+	const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
+    {
+        SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
+        ASSIGN_OR_RETURN(_mirrorCubemapAttachments[0], createCubemap(_logicalDevice, handle.getCommandBuffer(),
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samplerAnisotropy));
+        ASSIGN_OR_RETURN(_mirrorCubemapAttachments[1], createCubemap(_logicalDevice, handle.getCommandBuffer(),
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, samplerAnisotropy));
+    }
+
+    AttachmentLayout attachmentLayout;
+	attachmentLayout.addColorAttachment(
+		VK_FORMAT_R8G8B8A8_SRGB, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_STORE);
+    attachmentLayout.addShadowAttachment(
+        VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    ASSIGN_OR_RETURN(_mirrorCubemapRenderPass,
+        RenderpassBuilder(attachmentLayout)
+        .withMultiView({ 0b11 }, {0b11})
+		.addSubpass({ 0 })
+		.addDependency(VK_SUBPASS_EXTERNAL, 0,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+			VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+        .build(_logicalDevice));
+
+    ASSIGN_OR_RETURN(_mirrorCubemapFramebuffer,
+        Framebuffer::createFromTextures(_mirrorCubemapRenderPass,
+            _mirrorCubemapAttachments));
+	return StatusOk();
+}
+
 Status Application::loadCubemap() {
   _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
@@ -307,7 +366,7 @@ Status Application::loadCubemap() {
         _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
 
     ASSIGN_OR_RETURN(_textureCubemap,
-                     createCubemap(_logicalDevice, commandBuffer, imageData,
+                     createSkybox(_logicalDevice, commandBuffer, imageData,
                                    VK_FORMAT_R8G8B8A8_UNORM,
                                    _physicalDevice->getMaxSamplerAnisotropy()));
 
@@ -481,7 +540,7 @@ Status Application::createDescriptorSets() {
 
   _ubLight.pos = glm::vec3(15.1891f, 2.66408f, -0.841221f);
   _ubLight.projView =
-      glm::perspective(glm::radians(120.0f), 1.0f, 0.01f, 40.0f);
+      glm::perspective(glm::radians(120.0f), 1.0f, 0.1f, 40.0f);
   _ubLight.projView[1][1] = -_ubLight.projView[1][1];
   _ubLight.projView =
       _ubLight.projView * glm::lookAt(_ubLight.pos,
@@ -505,18 +564,18 @@ Status Application::createPresentResources() {
       .addDepthAttachment(VK_FORMAT_D24_UNORM_S8_UINT,
                           VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
-  _renderPass = Renderpass(_logicalDevice, attachmentsLayout);
-  RETURN_IF_ERROR(_renderPass.addSubpass({0, 1, 2}));
-  _renderPass.addDependency(VK_SUBPASS_EXTERNAL, 0,
-                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-  RETURN_IF_ERROR(_renderPass.build());
+  ASSIGN_OR_RETURN(_renderPass, RenderpassBuilder(attachmentsLayout)
+      .addDependency(VK_SUBPASS_EXTERNAL, 0,
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+          VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+          VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+	  .addSubpass({ 0, 1, 2 })
+	  .build(_logicalDevice));
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -560,9 +619,9 @@ Status Application::createShadowResources() {
   attachmentLayout.addShadowAttachment(
       VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-  _shadowRenderPass = Renderpass(_logicalDevice, attachmentLayout);
-  RETURN_IF_ERROR(_shadowRenderPass.addSubpass({0}));
-  RETURN_IF_ERROR(_shadowRenderPass.build());
+  ASSIGN_OR_RETURN(_shadowRenderPass, RenderpassBuilder(attachmentLayout)
+      .addSubpass({ 0 })
+      .build(_logicalDevice));
   ASSIGN_OR_RETURN(_shadowFramebuffer,
                    Framebuffer::createFromTextures(_shadowRenderPass,
                                                    std::span(&_shadowMap, 1)));

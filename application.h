@@ -62,7 +62,7 @@ class Application {
       _shadowPipeline; // Does not have to be unique_ptr
   TextureHandle _shadowHandle;
 
-  // Cubemap.
+  // Skybox.
   Buffer _vertexBufferCube;
   Buffer _indexBufferCube;
   Texture _textureCubemap;
@@ -71,6 +71,11 @@ class Application {
       _graphicsPipelineSkybox; // Does not have to be unique_ptr
   ShaderProgram _skyboxShaderProgram;
   TextureHandle _skyboxHandle;
+
+  // Mirror cubemap
+  std::array<Texture, 2> _mirrorCubemapAttachments;
+  Renderpass _mirrorCubemapRenderPass;
+  Framebuffer _mirrorCubemapFramebuffer;
 
   // PBR objects.
   std::vector<Object> objects;
@@ -133,6 +138,7 @@ private:
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
                                  uint32_t imageIndex);
   Status recreateSwapChain();
+  Status createMirrorCubemap();
 
   Status createDescriptorSets();
   Status createPresentResources();
