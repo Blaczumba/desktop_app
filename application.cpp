@@ -66,7 +66,7 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
       .buildImage(logicalDevice, commandBuffer,
                   imageData.stagingBuffer.getVkBuffer(),
                   createBufferImageCopyRegions(imageData.copyRegions)));
-  texture.addCreateVkImageView(0, imageData.mipLevels, 0, 6);
+  RETURN_IF_ERROR(texture.addCreateVkImageView(0, imageData.mipLevels, 0, 6));
   return texture;
 }
 
@@ -83,8 +83,10 @@ ErrorOr<Texture> createCubemap(const LogicalDevice& logicalDevice,
 		.withMaxAnisotropy(samplerAnisotropy)
 		.withNumSamples(VK_SAMPLE_COUNT_1_BIT)
 		.buildAttachment(logicalDevice, commandBuffer));
-	texture.addCreateVkImageView(0, 1, 0, 6);
-    // Add another 6 views to render to.
+	RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, 0, 6));
+    for (uint32_t i = 0; i < 6; i++) {
+        RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, i, 1));
+    }
 	return texture;
 }
 
@@ -103,7 +105,7 @@ ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
       .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
       .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
       .buildImageSampler(logicalDevice, commandBuffer));
-	texture.addCreateVkImageView(0, 1, 0, 1);
+    RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, 0, 1));
 	return texture;
 }
 
@@ -123,7 +125,7 @@ ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
       .buildMipmapImage(logicalDevice, commandBuffer,
                         imageData.stagingBuffer.getVkBuffer(),
                         createBufferImageCopyRegions(imageData.copyRegions)));
-	texture.addCreateVkImageView(0, imageData.mipLevels, 0, 1);
+    RETURN_IF_ERROR(texture.addCreateVkImageView(0, imageData.mipLevels, 0, 1));
 	return texture;
 }
 
