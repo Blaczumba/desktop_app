@@ -52,7 +52,7 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
                                const AssetManager::ImageData &imageData,
                                VkFormat format, float samplerAnisotropy) {
-  return TextureBuilder()
+  ASSIGN_OR_RETURN(Texture texture, TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
       .withExtent(imageData.width, imageData.height)
       .withFormat(format)
@@ -65,13 +65,15 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
       .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
       .buildImage(logicalDevice, commandBuffer,
                   imageData.stagingBuffer.getVkBuffer(),
-                  createBufferImageCopyRegions(imageData.copyRegions));
+                  createBufferImageCopyRegions(imageData.copyRegions)));
+  texture.addCreateVkImageView(0, imageData.mipLevels, 0, 6);
+  return texture;
 }
 
 ErrorOr<Texture> createCubemap(const LogicalDevice& logicalDevice,
 	VkCommandBuffer commandBuffer, VkImageAspectFlags aspect, VkFormat format, VkImageUsageFlags additionalUsage,
     float samplerAnisotropy) {
-	return TextureBuilder()
+    ASSIGN_OR_RETURN(Texture texture, TextureBuilder()
 		.withAspect(aspect)
 		.withExtent(1024, 1024)
 		.withFormat(format)
@@ -80,13 +82,16 @@ ErrorOr<Texture> createCubemap(const LogicalDevice& logicalDevice,
 		.withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
 		.withMaxAnisotropy(samplerAnisotropy)
 		.withNumSamples(VK_SAMPLE_COUNT_1_BIT)
-		.buildAttachment(logicalDevice, commandBuffer);
+		.buildAttachment(logicalDevice, commandBuffer));
+	texture.addCreateVkImageView(0, 1, 0, 6);
+    // Add another 6 views to render to.
+	return texture;
 }
 
 ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
                                  VkCommandBuffer commandBuffer, uint32_t width,
                                  uint32_t height, VkFormat format) {
-  return TextureBuilder()
+    ASSIGN_OR_RETURN(Texture texture, TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_DEPTH_BIT)
       .withExtent(width, height)
       .withFormat(format)
@@ -97,14 +102,16 @@ ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
                         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
       .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
       .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
-      .buildImageSampler(logicalDevice, commandBuffer);
+      .buildImageSampler(logicalDevice, commandBuffer));
+	texture.addCreateVkImageView(0, 1, 0, 1);
+	return texture;
 }
 
 ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
                                  VkCommandBuffer commandBuffer,
                                  const AssetManager::ImageData &imageData,
                                  VkFormat format, float samplerAnisotropy) {
-  return TextureBuilder()
+    ASSIGN_OR_RETURN(Texture texture, TextureBuilder()
       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
       .withExtent(imageData.width, imageData.height)
       .withFormat(format)
@@ -115,7 +122,9 @@ ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
       .withMaxLod(static_cast<float>(imageData.mipLevels))
       .buildMipmapImage(logicalDevice, commandBuffer,
                         imageData.stagingBuffer.getVkBuffer(),
-                        createBufferImageCopyRegions(imageData.copyRegions));
+                        createBufferImageCopyRegions(imageData.copyRegions)));
+	texture.addCreateVkImageView(0, imageData.mipLevels, 0, 1);
+	return texture;
 }
 
 constexpr std::string_view engineErrorToString(EngineError error) {
@@ -589,13 +598,13 @@ Status Application::createPresentResources() {
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
-  static constexpr GraphicsPipelineParameters pbrPipelineParameters = {
+  const GraphicsPipelineParameters pbrPipelineParameters = {
         .msaaSamples = msaaSamples,
         // .patchControlPoints = 3,
   };
   _graphicsPipeline = std::make_unique<GraphicsPipeline>(
       _renderPass, _pbrShaderProgram, pbrPipelineParameters);
-  static constexpr GraphicsPipelineParameters skyboxPipelineParameters = {
+  const GraphicsPipelineParameters skyboxPipelineParameters = {
       .cullMode = VK_CULL_MODE_FRONT_BIT, .msaaSamples = msaaSamples };
   _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(
       _renderPass, _skyboxShaderProgram, skyboxPipelineParameters);
