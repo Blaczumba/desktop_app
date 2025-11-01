@@ -73,9 +73,14 @@ class Application {
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
-  std::array<Texture, 2> _mirrorCubemapAttachments;
+  ShaderProgram _mirrorCubemapShaderProgram;
   Renderpass _mirrorCubemapRenderPass;
   Framebuffer _mirrorCubemapFramebuffer;
+  std::unique_ptr<GraphicsPipeline> _mirrorCubemapPipeline[6];
+  Buffer _mirrorCubemapUniformBuffer;
+  BufferHandle _mirrorCubemapHandle;
+  std::array<Texture, 2> _mirrorCubemapAttachments;
+  TextureHandle _mirrorCubemapTextureHandle;
 
   // PBR objects.
   std::vector<Object> objects;
@@ -135,8 +140,8 @@ private:
   void recordOctreeSecondaryCommandBuffer(const VkCommandBuffer commandBuffer,
                                           const OctreeNode *node,
                                           std::span<const glm::vec4> planes);
-  void recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
-                                 uint32_t imageIndex);
+  void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
+  void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
   Status recreateSwapChain();
   Status createMirrorCubemap();
 

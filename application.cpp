@@ -89,6 +89,7 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
           .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
           .withMaxAnisotropy(samplerAnisotropy)
           .withNumSamples(VK_SAMPLE_COUNT_1_BIT)
+          .withMipmapMode(VK_SAMPLER_MIPMAP_MODE_NEAREST)
           .buildAttachment(logicalDevice, commandBuffer));
   RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, 0, 6));
   return texture;
@@ -351,13 +352,13 @@ Status Application::createMirrorCubemap() {
   attachmentLayout.addColorAttachment(VK_FORMAT_R8G8B8A8_SRGB,
                                       VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                       VK_ATTACHMENT_STORE_OP_STORE);
-  attachmentLayout.addShadowAttachment(
-      VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  attachmentLayout.addDepthAttachment(
+      VK_FORMAT_D32_SFLOAT, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
   ASSIGN_OR_RETURN(
       _mirrorCubemapRenderPass,
       RenderpassBuilder(attachmentLayout)
-          .withMultiView({0b11}, {0b11})
+          .withMultiView({0b111111}, {0b111111})
           .addSubpass({0})
           .addDependency(VK_SUBPASS_EXTERNAL, 0,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
@@ -373,6 +374,55 @@ Status Application::createMirrorCubemap() {
   ASSIGN_OR_RETURN(_mirrorCubemapFramebuffer,
                    Framebuffer::createFromTextures(_mirrorCubemapRenderPass,
                                                    _mirrorCubemapAttachments));
+
+  ASSIGN_OR_RETURN(_mirrorCubemapShaderProgram, _programManager.createPbrEnvMappingProgram(_logicalDevice));
+
+  float arrayLayer;
+  const GraphicsPipelineParameters pipelineParams{
+	  .cullMode = VK_CULL_MODE_FRONT_BIT,
+      .specializationData = SpecializationData{
+          .data = &arrayLayer,
+		  .dataSize = sizeof(arrayLayer),
+          .mapEntries = {
+              {VK_SHADER_STAGE_VERTEX_BIT, {VkSpecializationMapEntry{.constantID = 0, .offset = 0, .size = sizeof(arrayLayer)}}}
+          }
+      }
+  };
+  for (int i = 0; i < 6; ++i) {
+      arrayLayer = static_cast<float>(i);
+      _mirrorCubemapPipeline[i] = std::make_unique<GraphicsPipeline>(
+              _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
+  }
+
+  // _mirrorCubemapTextureHandle = _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
+  const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
+  glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
+  // proj[1][1] *= -1; // Invert Y for Vulkan
+
+  struct {
+    alignas(16) glm::mat4 projView[6];
+    alignas(16) glm::vec3 viewPos;
+    alignas(16) glm::mat4 lightProjView;
+    alignas(16) glm::vec3 lightPos;
+  } const faceTransform = {
+    .projView = {
+      proj * glm::lookAt(pos, pos + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+    },
+	.viewPos = pos,
+	.lightProjView = _ubLight.projView,
+	.lightPos = _ubLight.pos
+  };
+
+  ASSIGN_OR_RETURN(_mirrorCubemapUniformBuffer, Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform)));
+  RETURN_IF_ERROR(_mirrorCubemapUniformBuffer.copyData(faceTransform));
+  _mirrorCubemapHandle = _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
+  _mirrorCubemapTextureHandle = _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
+
   return StatusOk();
 }
 
@@ -679,7 +729,11 @@ void Application::run() {
   updateUniformBuffer(_currentFrame);
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-    recordShadowCommandBuffer(handle.getCommandBuffer(), 0);
+    recordShadowCommandBuffer(handle.getCommandBuffer());
+  }
+  {
+      SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
+      recordMirrorCommandBuffer(handle.getCommandBuffer());
   }
   std::chrono::steady_clock::time_point previous;
 
@@ -825,7 +879,7 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
       const PushConstantsPBR pc = {
           .model = transformComponent.model,
-          .light = (uint32_t)_lightHandle,
+          .uniformIndex = (uint32_t)_lightHandle,
           .diffuse = (uint32_t)materialComponent.diffuse,
           .normal = (uint32_t)materialComponent.normal,
           .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
@@ -968,7 +1022,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     const PushConstantsSkybox pc = {.proj = _camera.getProjectionMatrix(),
                                     .view = _camera.getViewMatrix(),
                                     .skyboxHandle =
-                                        static_cast<uint32_t>(_skyboxHandle)};
+                                        static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
     vkCmdPushConstants(
         commandBuffer, _graphicsPipelineSkybox->getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1005,8 +1059,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
   }
 }
 
-void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
-                                            uint32_t imageIndex) {
+void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
   const VkCommandBufferBeginInfo beginInfo = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
@@ -1068,6 +1121,84 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
   }
 
   vkCmdEndRenderPass(commandBuffer);
+}
+
+void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
+    const VkCommandBufferBeginInfo beginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+
+    VkExtent2D extent = _mirrorCubemapAttachments[0].getVkExtent2D();
+
+    std::span<const VkClearValue> clearValues =
+        _mirrorCubemapRenderPass.getAttachmentsLayout().getVkClearValues();
+
+    const VkRenderPassBeginInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = _mirrorCubemapRenderPass.getVkRenderPass(),
+        .framebuffer = _mirrorCubemapFramebuffer.getVkFramebuffer(),
+        .renderArea = {.offset = {0, 0}, .extent = extent},
+        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+        .pClearValues = clearValues.data() };
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
+        VK_SUBPASS_CONTENTS_INLINE);
+
+    const VkViewport viewport = { .x = 0.0f,
+                                 .y = 0.0f,
+                                 .width = static_cast<float>(extent.width),
+                                 .height = static_cast<float>(extent.height),
+                                 .minDepth = 0.0f,
+                                 .maxDepth = 1.0f };
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    const VkRect2D scissor = { .offset = {0, 0}, .extent = extent };
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    const VkDescriptorSet descriptorSets[] = {
+        _bindlessDescriptorSet.getVkDescriptorSet()};
+
+    vkCmdBindDescriptorSets(commandBuffer, _mirrorCubemapPipeline[0]->getVkPipelineBindPoint(),
+        _mirrorCubemapPipeline[0]->getVkPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+
+    const VkDeviceSize offsets[] = { 0 };
+
+    for (const Object& object : _objects) {
+        const auto& meshComponent =
+            _registry.getComponent<MeshComponent>(object.getEntity());
+        const auto& transformComponent =
+            _registry.getComponent<TransformComponent>(object.getEntity());
+        const auto& materialComponent =
+			_registry.getComponent<MaterialComponent>(object.getEntity());
+
+        const PushConstantsPBR pc = {
+          .model = transformComponent.model,
+          .uniformIndex = (uint32_t)_mirrorCubemapHandle,
+          .diffuse = (uint32_t)materialComponent.diffuse,
+          .normal = (uint32_t)materialComponent.normal,
+          .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
+          .shadow = (uint32_t)_shadowHandle};
+
+        vkCmdPushConstants(commandBuffer, _mirrorCubemapPipeline[0]->getVkPipelineLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+
+        const Buffer& indexBuffer = meshComponent.indexBuffer;
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
+            meshComponent.indexType);
+
+        for (int i = 0; i < 1; i++) {
+            vkCmdBindPipeline(commandBuffer, _mirrorCubemapPipeline[i]->getVkPipelineBindPoint(),
+                _mirrorCubemapPipeline[i]->getVkPipeline());
+            vkCmdDrawIndexed(commandBuffer,
+                indexBuffer.getSize() /
+                getIndexSize(meshComponent.indexType),
+                1, 0, 0, 0);
+        }
+    }
+
+    vkCmdEndRenderPass(commandBuffer);
 }
 
 Status Application::recreateSwapChain() {
