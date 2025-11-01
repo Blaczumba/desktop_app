@@ -343,7 +343,7 @@ Status Application::createMirrorCubemap() {
     ASSIGN_OR_RETURN(_mirrorCubemapAttachments[1],
                      createCubemap(_logicalDevice, handle.getCommandBuffer(),
                                    VK_IMAGE_ASPECT_DEPTH_BIT,
-                                   VK_FORMAT_D32_SFLOAT,
+                                   VK_FORMAT_D24_UNORM_S8_UINT,
                                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                    samplerAnisotropy));
   }
@@ -353,13 +353,12 @@ Status Application::createMirrorCubemap() {
                                       VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                       VK_ATTACHMENT_STORE_OP_STORE);
   attachmentLayout.addDepthAttachment(
-      VK_FORMAT_D32_SFLOAT, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+      VK_FORMAT_D24_UNORM_S8_UINT, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
   ASSIGN_OR_RETURN(
       _mirrorCubemapRenderPass,
       RenderpassBuilder(attachmentLayout)
           .withMultiView({0b111111}, {0b111111})
-          .addSubpass({0})
           .addDependency(VK_SUBPASS_EXTERNAL, 0,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
@@ -369,6 +368,7 @@ Status Application::createMirrorCubemap() {
                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+          .addSubpass({ 0, 1 })
           .build(_logicalDevice));
 
   ASSIGN_OR_RETURN(_mirrorCubemapFramebuffer,
@@ -408,7 +408,7 @@ Status Application::createMirrorCubemap() {
     .projView = {
       proj * glm::lookAt(pos, pos + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
       proj * glm::lookAt(pos, pos + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f)),
+      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
       proj * glm::lookAt(pos, pos + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
       proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
       proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
