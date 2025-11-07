@@ -73,14 +73,18 @@ class Application {
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
+  // First pass.
   ShaderProgram _mirrorCubemapShaderProgram;
   Renderpass _mirrorCubemapRenderPass;
   Framebuffer _mirrorCubemapFramebuffer;
-  std::unique_ptr<GraphicsPipeline> _mirrorCubemapPipeline[6];
+  std::unique_ptr<GraphicsPipeline> _mirrorCubemapPipeline;
   Buffer _mirrorCubemapUniformBuffer;
   BufferHandle _mirrorCubemapHandle;
   std::array<Texture, 2> _mirrorCubemapAttachments;
   TextureHandle _mirrorCubemapTextureHandle;
+  // Second pass.
+  std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
+  ShaderProgram _envPhongShaderProgram;
 
   // PBR objects.
   std::vector<Object> objects;

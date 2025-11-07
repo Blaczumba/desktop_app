@@ -75,6 +75,7 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
 
 ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
+                               
                                VkImageAspectFlags aspect, VkFormat format,
                                VkImageUsageFlags additionalUsage,
                                float samplerAnisotropy) {
@@ -332,6 +333,7 @@ void Application::setInput() {
 }
 
 Status Application::createMirrorCubemap() {
+    // First pass for rendering the environment map.
   const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -343,7 +345,7 @@ Status Application::createMirrorCubemap() {
     ASSIGN_OR_RETURN(_mirrorCubemapAttachments[1],
                      createCubemap(_logicalDevice, handle.getCommandBuffer(),
                                    VK_IMAGE_ASPECT_DEPTH_BIT,
-                                   VK_FORMAT_D24_UNORM_S8_UINT,
+                                   VK_FORMAT_D16_UNORM,
                                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                    samplerAnisotropy));
   }
@@ -353,7 +355,7 @@ Status Application::createMirrorCubemap() {
                                       VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                       VK_ATTACHMENT_STORE_OP_STORE);
   attachmentLayout.addDepthAttachment(
-      VK_FORMAT_D24_UNORM_S8_UINT, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+      VK_FORMAT_D16_UNORM, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
   ASSIGN_OR_RETURN(
       _mirrorCubemapRenderPass,
@@ -377,27 +379,14 @@ Status Application::createMirrorCubemap() {
 
   ASSIGN_OR_RETURN(_mirrorCubemapShaderProgram, _programManager.createPbrEnvMappingProgram(_logicalDevice));
 
-  float arrayLayer;
-  const GraphicsPipelineParameters pipelineParams{
+  GraphicsPipelineParameters pipelineParams{
 	  .cullMode = VK_CULL_MODE_FRONT_BIT,
-      .specializationData = SpecializationData{
-          .data = &arrayLayer,
-		  .dataSize = sizeof(arrayLayer),
-          .mapEntries = {
-              {VK_SHADER_STAGE_VERTEX_BIT, {VkSpecializationMapEntry{.constantID = 0, .offset = 0, .size = sizeof(arrayLayer)}}}
-          }
-      }
   };
-  for (int i = 0; i < 6; ++i) {
-      arrayLayer = static_cast<float>(i);
-      _mirrorCubemapPipeline[i] = std::make_unique<GraphicsPipeline>(
-              _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
-  }
+  _mirrorCubemapPipeline = std::make_unique<GraphicsPipeline>(
+        _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
 
-  // _mirrorCubemapTextureHandle = _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
-  // proj[1][1] *= -1; // Invert Y for Vulkan
 
   struct {
     alignas(16) glm::mat4 projView[6];
@@ -422,6 +411,11 @@ Status Application::createMirrorCubemap() {
   RETURN_IF_ERROR(_mirrorCubemapUniformBuffer.copyData(faceTransform));
   _mirrorCubemapHandle = _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
   _mirrorCubemapTextureHandle = _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
+
+  // Second pass which uses the rendered environment map.
+  ASSIGN_OR_RETURN(_envPhongShaderProgram, _programManager.createPhongWithEnvMappingProgram(_logicalDevice));
+  _envPhongPipeline = std::make_unique<GraphicsPipeline>(
+      _renderPass, _envPhongShaderProgram, pipelineParams);
 
   return StatusOk();
 }
@@ -668,14 +662,11 @@ Status Application::createPresentResources() {
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
-  const GraphicsPipelineParameters pbrPipelineParameters = {
-      .msaaSamples = msaaSamples,
-      // .patchControlPoints = 3,
-  };
+  const GraphicsPipelineParameters pbrPipelineParameters;
   _graphicsPipeline = std::make_unique<GraphicsPipeline>(
       _renderPass, _pbrShaderProgram, pbrPipelineParameters);
   const GraphicsPipelineParameters skyboxPipelineParameters = {
-      .cullMode = VK_CULL_MODE_FRONT_BIT, .msaaSamples = msaaSamples};
+      .cullMode = VK_CULL_MODE_FRONT_BIT};
   _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(
       _renderPass, _skyboxShaderProgram, skyboxPipelineParameters);
   return StatusOk();
@@ -730,10 +721,7 @@ void Application::run() {
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     recordShadowCommandBuffer(handle.getCommandBuffer());
-  }
-  {
-      SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-      recordMirrorCommandBuffer(handle.getCommandBuffer());
+    recordMirrorCommandBuffer(handle.getCommandBuffer());
   }
   std::chrono::steady_clock::time_point previous;
 
@@ -1157,8 +1145,12 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
     const VkDescriptorSet descriptorSets[] = {
         _bindlessDescriptorSet.getVkDescriptorSet()};
 
-    vkCmdBindDescriptorSets(commandBuffer, _mirrorCubemapPipeline[0]->getVkPipelineBindPoint(),
-        _mirrorCubemapPipeline[0]->getVkPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+
+    vkCmdBindPipeline(commandBuffer, _mirrorCubemapPipeline->getVkPipelineBindPoint(),
+        _mirrorCubemapPipeline->getVkPipeline());
+
+    vkCmdBindDescriptorSets(commandBuffer, _mirrorCubemapPipeline->getVkPipelineBindPoint(),
+        _mirrorCubemapPipeline->getVkPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
 
     const VkDeviceSize offsets[] = { 0 };
 
@@ -1178,7 +1170,7 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
           .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
           .shadow = (uint32_t)_shadowHandle};
 
-        vkCmdPushConstants(commandBuffer, _mirrorCubemapPipeline[0]->getVkPipelineLayout(),
+        vkCmdPushConstants(commandBuffer, _mirrorCubemapPipeline->getVkPipelineLayout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
         VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
@@ -1188,14 +1180,10 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
             meshComponent.indexType);
 
-        for (int i = 0; i < 1; i++) {
-            vkCmdBindPipeline(commandBuffer, _mirrorCubemapPipeline[i]->getVkPipelineBindPoint(),
-                _mirrorCubemapPipeline[i]->getVkPipeline());
-            vkCmdDrawIndexed(commandBuffer,
-                indexBuffer.getSize() /
-                getIndexSize(meshComponent.indexType),
-                1, 0, 0, 0);
-        }
+        vkCmdDrawIndexed(commandBuffer,
+            indexBuffer.getSize() /
+            getIndexSize(meshComponent.indexType),
+            1, 0, 0, 0);
     }
 
     vkCmdEndRenderPass(commandBuffer);
