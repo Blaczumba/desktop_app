@@ -112,10 +112,10 @@ class Application {
 
   std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1>
       _commandPools;
-  std::array<PrimaryCommandBuffer, MAX_FRAMES_IN_FLIGHT> _primaryCommandBuffer;
-  std::array<std::array<SecondaryCommandBuffer, MAX_FRAMES_IN_FLIGHT>,
-             MAX_FRAMES_IN_FLIGHT>
-      _commandBuffers;
+  std::array<CommandBuffer, MAX_FRAMES_IN_FLIGHT> _primaryCommandBuffer;
+  std::array<std::array<CommandBuffer, MAX_FRAMES_IN_FLIGHT>,
+             MAX_THREADS_IN_POOL>
+      _secondaryCommandBuffers;
 
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _imageAvailableSemaphores;
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _renderFinishedSemaphores;

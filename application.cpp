@@ -75,7 +75,7 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
 
 ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkCommandBuffer commandBuffer,
-                               
+
                                VkImageAspectFlags aspect, VkFormat format,
                                VkImageUsageFlags additionalUsage,
                                float samplerAnisotropy) {
@@ -312,7 +312,9 @@ Status Application::init() {
           .withPreferredPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)
           .build(_logicalDevice, _surface.getVkSurface(),
                  VkExtent2D{framebufferSize.width, framebufferSize.height}));
-  ASSIGN_OR_RETURN(_singleTimeCommandPool, CommandPool::create(_logicalDevice));
+  ASSIGN_OR_RETURN(_singleTimeCommandPool,
+                   CommandPool::create(_logicalDevice,
+                                       VK_COMMAND_POOL_CREATE_TRANSIENT_BIT));
   return StatusOk();
 }
 
@@ -333,7 +335,7 @@ void Application::setInput() {
 }
 
 Status Application::createMirrorCubemap() {
-    // First pass for rendering the environment map.
+  // First pass for rendering the environment map.
   const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -354,8 +356,8 @@ Status Application::createMirrorCubemap() {
   attachmentLayout.addColorAttachment(VK_FORMAT_R8G8B8A8_SRGB,
                                       VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                       VK_ATTACHMENT_STORE_OP_STORE);
-  attachmentLayout.addDepthAttachment(
-      VK_FORMAT_D16_UNORM, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+  attachmentLayout.addDepthAttachment(VK_FORMAT_D16_UNORM,
+                                      VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
   ASSIGN_OR_RETURN(
       _mirrorCubemapRenderPass,
@@ -370,20 +372,21 @@ Status Application::createMirrorCubemap() {
                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
-          .addSubpass({ 0, 1 })
+          .addSubpass({0, 1})
           .build(_logicalDevice));
 
   ASSIGN_OR_RETURN(_mirrorCubemapFramebuffer,
                    Framebuffer::createFromTextures(_mirrorCubemapRenderPass,
                                                    _mirrorCubemapAttachments));
 
-  ASSIGN_OR_RETURN(_mirrorCubemapShaderProgram, _programManager.createPbrEnvMappingProgram(_logicalDevice));
+  ASSIGN_OR_RETURN(_mirrorCubemapShaderProgram,
+                   _programManager.createPbrEnvMappingProgram(_logicalDevice));
 
   GraphicsPipelineParameters pipelineParams{
-	  .cullMode = VK_CULL_MODE_FRONT_BIT,
+      .cullMode = VK_CULL_MODE_FRONT_BIT,
   };
   _mirrorCubemapPipeline = std::make_unique<GraphicsPipeline>(
-        _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
+      _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
 
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
@@ -394,26 +397,38 @@ Status Application::createMirrorCubemap() {
     alignas(16) glm::mat4 lightProjView;
     alignas(16) glm::vec3 lightPos;
   } const faceTransform = {
-    .projView = {
-      proj * glm::lookAt(pos, pos + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-      proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
-    },
-	.viewPos = pos,
-	.lightProjView = _ubLight.projView,
-	.lightPos = _ubLight.pos
-  };
+      .projView =
+          {
+              proj * glm::lookAt(pos, pos + glm::vec3(1.0f, 0.0f, 0.0f),
+                                 glm::vec3(0.0f, -1.0f, 0.0f)),
+              proj * glm::lookAt(pos, pos + glm::vec3(-1.0f, 0.0f, 0.0f),
+                                 glm::vec3(0.0f, -1.0f, 0.0f)),
+              proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 1.0f, 0.0f),
+                                 glm::vec3(0.0f, 0.0f, 1.0f)),
+              proj * glm::lookAt(pos, pos + glm::vec3(0.0f, -1.0f, 0.0f),
+                                 glm::vec3(0.0f, 0.0f, -1.0f)),
+              proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, 1.0f),
+                                 glm::vec3(0.0f, -1.0f, 0.0f)),
+              proj * glm::lookAt(pos, pos + glm::vec3(0.0f, 0.0f, -1.0f),
+                                 glm::vec3(0.0f, -1.0f, 0.0f)),
+          },
+      .viewPos = pos,
+      .lightProjView = _ubLight.projView,
+      .lightPos = _ubLight.pos};
 
-  ASSIGN_OR_RETURN(_mirrorCubemapUniformBuffer, Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform)));
+  ASSIGN_OR_RETURN(
+      _mirrorCubemapUniformBuffer,
+      Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform)));
   RETURN_IF_ERROR(_mirrorCubemapUniformBuffer.copyData(faceTransform));
-  _mirrorCubemapHandle = _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
-  _mirrorCubemapTextureHandle = _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
+  _mirrorCubemapHandle =
+      _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
+  _mirrorCubemapTextureHandle =
+      _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
 
   // Second pass which uses the rendered environment map.
-  ASSIGN_OR_RETURN(_envPhongShaderProgram, _programManager.createPhongWithEnvMappingProgram(_logicalDevice));
+  ASSIGN_OR_RETURN(
+      _envPhongShaderProgram,
+      _programManager.createPhongWithEnvMappingProgram(_logicalDevice));
   _envPhongPipeline = std::make_unique<GraphicsPipeline>(
       _renderPass, _envPhongShaderProgram, pipelineParams);
 
@@ -444,12 +459,11 @@ Status Application::loadCubemap() {
 
     ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
                      _assetManager.getVertexData("cube.obj"));
-    ASSIGN_OR_RETURN(
-        _vertexBufferCube,
-        Buffer::createVertexBuffer(_logicalDevice,
-                                   vData.vertexBufferPositions.getSize()));
-    RETURN_IF_ERROR(_vertexBufferCube.copyBuffer(commandBuffer,
-                                                 vData.vertexBufferPositions));
+    ASSIGN_OR_RETURN(_vertexBufferCube,
+                     Buffer::createVertexBuffer(
+                         _logicalDevice, vData.buffers.at("P").getSize()));
+    RETURN_IF_ERROR(
+        _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P")));
     ASSIGN_OR_RETURN(
         _indexBufferCube,
         Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize()));
@@ -524,21 +538,20 @@ Status Application::loadObjects() {
                      _assetManager.getVertexData(sceneObject.vertexResource));
     MeshComponent msh;
     ASSIGN_OR_RETURN(msh.vertexBuffer,
-                     Buffer::createVertexBuffer(_logicalDevice,
-                                                vData.vertexBuffer.getSize()));
+                     Buffer::createVertexBuffer(
+                         _logicalDevice, vData.buffers.at("PTNT").getSize()));
     RETURN_IF_ERROR(
-        msh.vertexBuffer.copyBuffer(commandBuffer, vData.vertexBuffer));
+        msh.vertexBuffer.copyBuffer(commandBuffer, vData.buffers.at("PTNT")));
     ASSIGN_OR_RETURN(
         msh.indexBuffer,
         Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize()));
     RETURN_IF_ERROR(
         msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer));
-    ASSIGN_OR_RETURN(
-        msh.vertexBufferPrimitive,
-        Buffer::createVertexBuffer(_logicalDevice,
-                                   vData.vertexBufferPositions.getSize()));
+    ASSIGN_OR_RETURN(msh.vertexBufferPrimitive,
+                     Buffer::createVertexBuffer(
+                         _logicalDevice, vData.buffers.at("P").getSize()));
     RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(
-        commandBuffer, vData.vertexBufferPositions));
+        commandBuffer, vData.buffers.at("P")));
     msh.indexType = vData.indexType;
     msh.aabb = createAABBfromVertices(sceneObject.positions, sceneObject.model);
     _registry.addComponent<MeshComponent>(e, std::move(msh));
@@ -759,10 +772,6 @@ void Application::draw() {
   vkResetFences(_logicalDevice.getVkDevice(), 1,
                 &_inFlightFences[_currentFrame]);
 
-  _primaryCommandBuffer[_currentFrame].resetCommandBuffer();
-  for (int i = 0; i < MAX_THREADS_IN_POOL; i++)
-    _commandBuffers[i][_currentFrame].resetCommandBuffer();
-
   recordCommandBuffer(imageIndex);
 
   VkSubmitInfo submitInfo = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -829,17 +838,21 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
 }
 
 Status Application::createCommandBuffers() {
-  for (int i = 0; i < MAX_THREADS_IN_POOL + 1; i++) {
-    ASSIGN_OR_RETURN(_commandPools[i], CommandPool::create(_logicalDevice));
+  for (int i = 0; i <= MAX_THREADS_IN_POOL; i++) {
+    ASSIGN_OR_RETURN(
+        _commandPools[i],
+        CommandPool::create(_logicalDevice,
+                            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
   }
   ASSIGN_OR_RETURN(_primaryCommandBuffer,
                    _commandPools[MAX_THREADS_IN_POOL]
-                       ->createPrimaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
+                       ->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
+                           VK_COMMAND_BUFFER_LEVEL_PRIMARY));
   for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
     ASSIGN_OR_RETURN(
-        _commandBuffers[i],
-        _commandPools[i]
-            ->createSecondaryCommandBuffers<MAX_FRAMES_IN_FLIGHT>());
+        _secondaryCommandBuffers[i],
+        _commandPools[i]->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
+            VK_COMMAND_BUFFER_LEVEL_SECONDARY));
   }
   return StatusOk();
 }
@@ -915,9 +928,9 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
 void Application::recordCommandBuffer(uint32_t imageIndex) {
   const Framebuffer &framebuffer = _framebuffers[imageIndex];
-  const PrimaryCommandBuffer &primaryCommandBuffer =
+  const CommandBuffer &primaryCommandBuffer =
       _primaryCommandBuffer[_currentFrame];
-  primaryCommandBuffer.begin();
+  primaryCommandBuffer.beginAsPrimary();
   primaryCommandBuffer.beginRenderPass(framebuffer);
 
   static const bool viewportScissorInheritance =
@@ -939,14 +952,16 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
   futures[0] = std::async(std::launch::async, [&]() -> Status {
     const VkCommandBuffer commandBuffer =
-        _commandBuffers[0][_currentFrame].getVkCommandBuffer();
+        _secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      CHECK_VKCMD(_commandBuffers[0][_currentFrame].begin(
-          framebuffer, &scissorViewportInheritance));
+      RETURN_IF_ERROR(
+          _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
+              framebuffer, &scissorViewportInheritance));
     } else {
-      CHECK_VKCMD(
-          _commandBuffers[0][_currentFrame].begin(framebuffer, nullptr));
+      RETURN_IF_ERROR(
+          _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
+              framebuffer, nullptr));
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -983,14 +998,16 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
   futures[1] = std::async(std::launch::async, [&]() -> Status {
     // Skybox
     const VkCommandBuffer commandBuffer =
-        _commandBuffers[1][_currentFrame].getVkCommandBuffer();
+        _secondaryCommandBuffers[1][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      CHECK_VKCMD(_commandBuffers[1][_currentFrame].begin(
-          framebuffer, &scissorViewportInheritance));
+      RETURN_IF_ERROR(
+          _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
+              framebuffer, &scissorViewportInheritance));
     } else {
-      CHECK_VKCMD(
-          _commandBuffers[1][_currentFrame].begin(framebuffer, nullptr));
+      RETURN_IF_ERROR(
+          _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
+              framebuffer, nullptr));
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -1007,10 +1024,10 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
-    const PushConstantsSkybox pc = {.proj = _camera.getProjectionMatrix(),
-                                    .view = _camera.getViewMatrix(),
-                                    .skyboxHandle =
-                                        static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
+    const PushConstantsSkybox pc = {
+        .proj = _camera.getProjectionMatrix(),
+        .view = _camera.getViewMatrix(),
+        .skyboxHandle = static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
     vkCmdPushConstants(
         commandBuffer, _graphicsPipelineSkybox->getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1038,8 +1055,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
                 [](std::future<Status> &future) { future.wait(); });
 
   primaryCommandBuffer.executeSecondaryCommandBuffers(
-      {_commandBuffers[0][_currentFrame].getVkCommandBuffer(),
-       _commandBuffers[1][_currentFrame].getVkCommandBuffer()});
+      {_secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer(),
+       _secondaryCommandBuffers[1][_currentFrame].getVkCommandBuffer()});
   primaryCommandBuffer.endRenderPass();
 
   if (primaryCommandBuffer.end() != VK_SUCCESS) {
@@ -1112,81 +1129,85 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
 }
 
 void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
-    const VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+  const VkCommandBufferBeginInfo beginInfo = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
-    VkExtent2D extent = _mirrorCubemapAttachments[0].getVkExtent2D();
+  VkExtent2D extent = _mirrorCubemapAttachments[0].getVkExtent2D();
 
-    std::span<const VkClearValue> clearValues =
-        _mirrorCubemapRenderPass.getAttachmentsLayout().getVkClearValues();
+  std::span<const VkClearValue> clearValues =
+      _mirrorCubemapRenderPass.getAttachmentsLayout().getVkClearValues();
 
-    const VkRenderPassBeginInfo renderPassInfo = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = _mirrorCubemapRenderPass.getVkRenderPass(),
-        .framebuffer = _mirrorCubemapFramebuffer.getVkFramebuffer(),
-        .renderArea = {.offset = {0, 0}, .extent = extent},
-        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        .pClearValues = clearValues.data() };
+  const VkRenderPassBeginInfo renderPassInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .renderPass = _mirrorCubemapRenderPass.getVkRenderPass(),
+      .framebuffer = _mirrorCubemapFramebuffer.getVkFramebuffer(),
+      .renderArea = {.offset = {0, 0}, .extent = extent},
+      .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+      .pClearValues = clearValues.data()};
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
-        VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
+                       VK_SUBPASS_CONTENTS_INLINE);
 
-    const VkViewport viewport = { .x = 0.0f,
-                                 .y = 0.0f,
-                                 .width = static_cast<float>(extent.width),
-                                 .height = static_cast<float>(extent.height),
-                                 .minDepth = 0.0f,
-                                 .maxDepth = 1.0f };
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+  const VkViewport viewport = {.x = 0.0f,
+                               .y = 0.0f,
+                               .width = static_cast<float>(extent.width),
+                               .height = static_cast<float>(extent.height),
+                               .minDepth = 0.0f,
+                               .maxDepth = 1.0f};
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-    const VkRect2D scissor = { .offset = {0, 0}, .extent = extent };
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+  const VkRect2D scissor = {.offset = {0, 0}, .extent = extent};
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    const VkDescriptorSet descriptorSets[] = {
-        _bindlessDescriptorSet.getVkDescriptorSet()};
+  const VkDescriptorSet descriptorSets[] = {
+      _bindlessDescriptorSet.getVkDescriptorSet()};
 
+  vkCmdBindPipeline(commandBuffer,
+                    _mirrorCubemapPipeline->getVkPipelineBindPoint(),
+                    _mirrorCubemapPipeline->getVkPipeline());
 
-    vkCmdBindPipeline(commandBuffer, _mirrorCubemapPipeline->getVkPipelineBindPoint(),
-        _mirrorCubemapPipeline->getVkPipeline());
+  vkCmdBindDescriptorSets(commandBuffer,
+                          _mirrorCubemapPipeline->getVkPipelineBindPoint(),
+                          _mirrorCubemapPipeline->getVkPipelineLayout(), 0, 1,
+                          descriptorSets, 0, nullptr);
 
-    vkCmdBindDescriptorSets(commandBuffer, _mirrorCubemapPipeline->getVkPipelineBindPoint(),
-        _mirrorCubemapPipeline->getVkPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+  const VkDeviceSize offsets[] = {0};
 
-    const VkDeviceSize offsets[] = { 0 };
+  for (const Object &object : _objects) {
+    const auto &meshComponent =
+        _registry.getComponent<MeshComponent>(object.getEntity());
+    const auto &transformComponent =
+        _registry.getComponent<TransformComponent>(object.getEntity());
+    const auto &materialComponent =
+        _registry.getComponent<MaterialComponent>(object.getEntity());
 
-    for (const Object& object : _objects) {
-        const auto& meshComponent =
-            _registry.getComponent<MeshComponent>(object.getEntity());
-        const auto& transformComponent =
-            _registry.getComponent<TransformComponent>(object.getEntity());
-        const auto& materialComponent =
-			_registry.getComponent<MaterialComponent>(object.getEntity());
+    const PushConstantsPBR pc = {
+        .model = transformComponent.model,
+        .uniformIndex = (uint32_t)_mirrorCubemapHandle,
+        .diffuse = (uint32_t)materialComponent.diffuse,
+        .normal = (uint32_t)materialComponent.normal,
+        .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
+        .shadow = (uint32_t)_shadowHandle};
 
-        const PushConstantsPBR pc = {
-          .model = transformComponent.model,
-          .uniformIndex = (uint32_t)_mirrorCubemapHandle,
-          .diffuse = (uint32_t)materialComponent.diffuse,
-          .normal = (uint32_t)materialComponent.normal,
-          .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
-          .shadow = (uint32_t)_shadowHandle};
+    vkCmdPushConstants(
+        commandBuffer, _mirrorCubemapPipeline->getVkPipelineLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        sizeof(pc), &pc);
 
-        vkCmdPushConstants(commandBuffer, _mirrorCubemapPipeline->getVkPipelineLayout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+    VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-        VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+    const Buffer &indexBuffer = meshComponent.indexBuffer;
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
+                         meshComponent.indexType);
 
-        const Buffer& indexBuffer = meshComponent.indexBuffer;
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
-            meshComponent.indexType);
+    vkCmdDrawIndexed(commandBuffer,
+                     indexBuffer.getSize() /
+                         getIndexSize(meshComponent.indexType),
+                     1, 0, 0, 0);
+  }
 
-        vkCmdDrawIndexed(commandBuffer,
-            indexBuffer.getSize() /
-            getIndexSize(meshComponent.indexType),
-            1, 0, 0, 0);
-    }
-
-    vkCmdEndRenderPass(commandBuffer);
+  vkCmdEndRenderPass(commandBuffer);
 }
 
 Status Application::recreateSwapChain() {
