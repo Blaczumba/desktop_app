@@ -73,9 +73,18 @@ class Application {
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
-  std::array<Texture, 2> _mirrorCubemapAttachments;
+  // First pass.
+  ShaderProgram _mirrorCubemapShaderProgram;
   Renderpass _mirrorCubemapRenderPass;
   Framebuffer _mirrorCubemapFramebuffer;
+  std::unique_ptr<GraphicsPipeline> _mirrorCubemapPipeline;
+  Buffer _mirrorCubemapUniformBuffer;
+  BufferHandle _mirrorCubemapHandle;
+  std::array<Texture, 2> _mirrorCubemapAttachments;
+  TextureHandle _mirrorCubemapTextureHandle;
+  // Second pass.
+  std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
+  ShaderProgram _envPhongShaderProgram;
 
   // PBR objects.
   std::vector<Object> objects;
@@ -103,10 +112,10 @@ class Application {
 
   std::array<std::shared_ptr<CommandPool>, MAX_THREADS_IN_POOL + 1>
       _commandPools;
-  std::array<PrimaryCommandBuffer, MAX_FRAMES_IN_FLIGHT> _primaryCommandBuffer;
-  std::array<std::array<SecondaryCommandBuffer, MAX_FRAMES_IN_FLIGHT>,
-             MAX_FRAMES_IN_FLIGHT>
-      _commandBuffers;
+  std::array<CommandBuffer, MAX_FRAMES_IN_FLIGHT> _primaryCommandBuffer;
+  std::array<std::array<CommandBuffer, MAX_FRAMES_IN_FLIGHT>,
+             MAX_THREADS_IN_POOL>
+      _secondaryCommandBuffers;
 
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _imageAvailableSemaphores;
   std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> _renderFinishedSemaphores;
@@ -135,8 +144,8 @@ private:
   void recordOctreeSecondaryCommandBuffer(const VkCommandBuffer commandBuffer,
                                           const OctreeNode *node,
                                           std::span<const glm::vec4> planes);
-  void recordShadowCommandBuffer(VkCommandBuffer commandBuffer,
-                                 uint32_t imageIndex);
+  void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
+  void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
   Status recreateSwapChain();
   Status createMirrorCubemap();
 
