@@ -13,12 +13,12 @@
 #include "bejzak_engine/common/model_loader/obj_loader/obj_loader.h"
 #include "bejzak_engine/common/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
 #include "bejzak_engine/common/status/status.h"
-#include "bejzak_engine/common/util/vertex_builder.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/lib/buffer/shared_buffer.h"
-#include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
-#include "bejzak_engine/vulkan_wrapper/render_pass/attachment_layout.h"
-#include "bejzak_engine/vulkan_wrapper/util/check.h"
+#include "bejzak_engine/vulkan/wrapper/render_pass/attachment_layout.h"
+#include "bejzak_engine/vulkan/wrapper/util/check.h"
+#include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
+#include "bejzak_engine/vulkan/wrapper/pipeline/input_description.h"
 
 #include <algorithm>
 #include <array>
@@ -83,7 +83,7 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
       Texture texture,
       TextureBuilder()
           .withAspect(aspect)
-          .withExtent(1024, 1024)
+          .withExtent(1024 * 2, 1024 * 2)
           .withFormat(format)
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | additionalUsage)
           .withLayerCount(6)
@@ -218,7 +218,7 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
     : _camera(PerspectiveProjection{glm::radians(45.0f), 1920.0f / 1080.f,
                                     0.01f, 50.0f},
               glm::vec3(0.0f), 5.5f, 0.01f),
-      _programManager(fileLoader) {
+      _pipelineManager(fileLoader) {
   if (Status status = init(); !status) {
     std::println("Failed to initialize application: {}",
                  errorToString(status.error()));
@@ -379,14 +379,8 @@ Status Application::createMirrorCubemap() {
                    Framebuffer::createFromTextures(_mirrorCubemapRenderPass,
                                                    _mirrorCubemapAttachments));
 
-  ASSIGN_OR_RETURN(_mirrorCubemapShaderProgram,
-                   _programManager.createPbrEnvMappingProgram(_logicalDevice));
-
-  GraphicsPipelineParameters pipelineParams{
-      .cullMode = VK_CULL_MODE_FRONT_BIT,
-  };
-  _mirrorCubemapPipeline = std::make_unique<GraphicsPipeline>(
-      _mirrorCubemapRenderPass, _mirrorCubemapShaderProgram, pipelineParams);
+  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass));
+  ASSIGN_OR_RETURN(_mirrorCubemapPipeline, builder.getVkGraphicsPipelineCreateInfo());
 
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
@@ -424,13 +418,6 @@ Status Application::createMirrorCubemap() {
       _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
   _mirrorCubemapTextureHandle =
       _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
-
-  // Second pass which uses the rendered environment map.
-  ASSIGN_OR_RETURN(
-      _envPhongShaderProgram,
-      _programManager.createPhongWithEnvMappingProgram(_logicalDevice));
-  _envPhongPipeline = std::make_unique<GraphicsPipeline>(
-      _renderPass, _envPhongShaderProgram, pipelineParams);
 
   return StatusOk();
 }
@@ -589,11 +576,6 @@ Status Application::createDescriptorSets() {
       _dynamicUniformBuffersCamera,
       Buffer::createUniformBuffer(_logicalDevice, MAX_FRAMES_IN_FLIGHT * size));
 
-  ASSIGN_OR_RETURN(_pbrShaderProgram,
-                   _programManager.createPBRProgram(_logicalDevice));
-  ASSIGN_OR_RETURN(_skyboxShaderProgram,
-                   _programManager.createSkyboxProgram(_logicalDevice));
-
   ASSIGN_OR_RETURN(
       _descriptorPool,
       DescriptorPool::create(_logicalDevice, 150,
@@ -601,14 +583,14 @@ Status Application::createDescriptorSets() {
   ASSIGN_OR_RETURN(_dynamicDescriptorPool,
                    DescriptorPool::create(_logicalDevice, 1));
 
+  ASSIGN_OR_RETURN(const VkDescriptorSetLayout bindlesslayout, _pipelineManager.getOrCreateBindlessLayout(_logicalDevice));
   ASSIGN_OR_RETURN(_bindlessDescriptorSet,
-                   _descriptorPool->createDesriptorSet(
-                       _programManager.getVkDescriptorSetLayout(
-                           DescriptorSetType::BINDLESS)));
+                   _descriptorPool->createDesriptorSet(bindlesslayout));
+
+  ASSIGN_OR_RETURN(const VkDescriptorSetLayout cameraLayout, _pipelineManager.getOrCreateCameraLayout(_logicalDevice));
   ASSIGN_OR_RETURN(
       _dynamicDescriptorSet,
-      _dynamicDescriptorPool->createDesriptorSet(
-          _programManager.getVkDescriptorSetLayout(DescriptorSetType::CAMERA)));
+      _dynamicDescriptorPool->createDesriptorSet(cameraLayout));
   _bindlessWriter =
       std::make_unique<BindlessDescriptorSetWriter>(_bindlessDescriptorSet);
   _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
@@ -675,13 +657,11 @@ Status Application::createPresentResources() {
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
-  const GraphicsPipelineParameters pbrPipelineParameters;
-  _graphicsPipeline = std::make_unique<GraphicsPipeline>(
-      _renderPass, _pbrShaderProgram, pbrPipelineParameters);
-  const GraphicsPipelineParameters skyboxPipelineParameters = {
-      .cullMode = VK_CULL_MODE_FRONT_BIT};
-  _graphicsPipelineSkybox = std::make_unique<GraphicsPipeline>(
-      _renderPass, _skyboxShaderProgram, skyboxPipelineParameters);
+
+  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createPBRProgram(_renderPass));
+  ASSIGN_OR_RETURN(_graphicsPipeline, builder.getVkGraphicsPipelineCreateInfo());
+  ASSIGN_OR_RETURN(GraphicsPipelineBuilder skyboxBuilder, _pipelineManager.createSkyboxProgram(_renderPass));
+  ASSIGN_OR_RETURN(_skyboxPipeline, skyboxBuilder.getVkGraphicsPipelineCreateInfo());
   return StatusOk();
 }
 
@@ -696,8 +676,6 @@ Status Application::createShadowResources() {
   }
   _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
 
-  ASSIGN_OR_RETURN(_shadowShaderProgram,
-                   _programManager.createShadowProgram(_logicalDevice));
   AttachmentLayout attachmentLayout;
   attachmentLayout.addShadowAttachment(
       VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -709,13 +687,8 @@ Status Application::createShadowResources() {
                    Framebuffer::createFromTextures(_shadowRenderPass,
                                                    std::span(&_shadowMap, 1)));
 
-  const GraphicsPipelineParameters parameters = {
-      .cullMode = VK_CULL_MODE_BACK_BIT,
-      .depthBiasConstantFactor = 0.7f,
-      .depthBiasSlopeFactor = 2.0f,
-  };
-  _shadowPipeline = std::make_unique<GraphicsPipeline>(
-      _shadowRenderPass, _shadowShaderProgram, parameters);
+  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createShadowProgram(_shadowRenderPass));
+  ASSIGN_OR_RETURN(_shadowPipeline, builder.getVkGraphicsPipelineCreateInfo());
   return StatusOk();
 }
 
@@ -888,7 +861,7 @@ void Application::recordOctreeSecondaryCommandBuffer(
       };
 
       vkCmdPushConstants(
-          commandBuffer, _graphicsPipeline->getVkPipelineLayout(),
+          commandBuffer, _graphicsPipeline.getVkPipelineLayout(),
           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
           sizeof(pc), &pc);
 
@@ -966,8 +939,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
     vkCmdBindPipeline(commandBuffer,
-                      _graphicsPipeline->getVkPipelineBindPoint(),
-                      _graphicsPipeline->getVkPipeline());
+                      _graphicsPipeline.getVkPipelineBindPoint(),
+                      _graphicsPipeline.getVkPipeline());
 
     const OctreeNode *root = _octree->getRoot();
     const auto &planes = extractFrustumPlanes(_camera.getProjectionMatrix() *
@@ -983,8 +956,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         &offset, {_currentFrame});
 
     vkCmdBindDescriptorSets(commandBuffer,
-                            _graphicsPipeline->getVkPipelineBindPoint(),
-                            _graphicsPipeline->getVkPipelineLayout(), 0,
+                            _graphicsPipeline.getVkPipelineBindPoint(),
+                            _graphicsPipeline.getVkPipelineLayout(), 0,
                             static_cast<uint32_t>(std::size(descriptorSets)),
                             descriptorSets, 1, &offset);
 
@@ -1013,8 +986,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     }
 
     vkCmdBindPipeline(commandBuffer,
-                      _graphicsPipelineSkybox->getVkPipelineBindPoint(),
-                      _graphicsPipelineSkybox->getVkPipeline());
+                      _skyboxPipeline.getVkPipelineBindPoint(),
+                      _skyboxPipeline.getVkPipeline());
 
     static constexpr VkDeviceSize offsets[] = {0};
 
@@ -1029,7 +1002,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         .view = _camera.getViewMatrix(),
         .skyboxHandle = static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
     vkCmdPushConstants(
-        commandBuffer, _graphicsPipelineSkybox->getVkPipelineLayout(),
+        commandBuffer, _skyboxPipeline.getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
@@ -1037,8 +1010,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _bindlessDescriptorSet.getVkDescriptorSet();
 
     vkCmdBindDescriptorSets(commandBuffer,
-                            _graphicsPipelineSkybox->getVkPipelineBindPoint(),
-                            _graphicsPipelineSkybox->getVkPipelineLayout(), 0,
+                            _skyboxPipeline.getVkPipelineBindPoint(),
+                            _skyboxPipeline.getVkPipelineLayout(), 0,
                             1, &descriptorSet, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
@@ -1096,8 +1069,8 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
   const VkDeviceSize offsets[] = {0};
-  vkCmdBindPipeline(commandBuffer, _shadowPipeline->getVkPipelineBindPoint(),
-                    _shadowPipeline->getVkPipeline());
+  vkCmdBindPipeline(commandBuffer, _shadowPipeline.getVkPipelineBindPoint(),
+                    _shadowPipeline.getVkPipeline());
 
   PushConstantsShadow pc = {.lightProjView = _ubLight.projView};
 
@@ -1109,7 +1082,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
 
     pc.model = transformComponent.model;
 
-    vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
+    vkCmdPushConstants(commandBuffer, _shadowPipeline.getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
     VkBuffer vertexBuffer = meshComponent.vertexBufferPrimitive.getVkBuffer();
@@ -1163,12 +1136,12 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
       _bindlessDescriptorSet.getVkDescriptorSet()};
 
   vkCmdBindPipeline(commandBuffer,
-                    _mirrorCubemapPipeline->getVkPipelineBindPoint(),
-                    _mirrorCubemapPipeline->getVkPipeline());
+      _mirrorCubemapPipeline.getVkPipelineBindPoint(),
+      _mirrorCubemapPipeline.getVkPipeline());
 
   vkCmdBindDescriptorSets(commandBuffer,
-                          _mirrorCubemapPipeline->getVkPipelineBindPoint(),
-                          _mirrorCubemapPipeline->getVkPipelineLayout(), 0, 1,
+      _mirrorCubemapPipeline.getVkPipelineBindPoint(),
+      _mirrorCubemapPipeline.getVkPipelineLayout(), 0, 1,
                           descriptorSets, 0, nullptr);
 
   const VkDeviceSize offsets[] = {0};
@@ -1190,7 +1163,7 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
         .shadow = (uint32_t)_shadowHandle};
 
     vkCmdPushConstants(
-        commandBuffer, _mirrorCubemapPipeline->getVkPipelineLayout(),
+        commandBuffer, _mirrorCubemapPipeline.getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 

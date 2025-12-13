@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bejzak_engine/common/util/primitives.h"
 #include "bejzak_engine/common/camera/camera.h"
 #include "bejzak_engine/common/camera/projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
@@ -8,25 +9,24 @@
 #include "bejzak_engine/common/scene/octree.h"
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/window/window_glfw.h"
-#include "bejzak_engine/vulkan_wrapper/command_buffer/command_buffer.h"
-#include "bejzak_engine/vulkan_wrapper/debug_messenger/debug_messenger.h"
-#include "bejzak_engine/vulkan_wrapper/descriptor_set/bindless_descriptor_set_writer.h"
-#include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_pool.h"
-#include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set.h"
-#include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set_layout.h"
-#include "bejzak_engine/vulkan_wrapper/descriptor_set/descriptor_set_writer.h"
-#include "bejzak_engine/vulkan_wrapper/framebuffer/framebuffer.h"
-#include "bejzak_engine/vulkan_wrapper/instance/instance.h"
-#include "bejzak_engine/vulkan_wrapper/logical_device/logical_device.h"
-#include "bejzak_engine/vulkan_wrapper/memory_objects/buffer.h"
-#include "bejzak_engine/vulkan_wrapper/memory_objects/texture.h"
-#include "bejzak_engine/vulkan_wrapper/physical_device/physical_device.h"
-#include "bejzak_engine/vulkan_wrapper/pipeline/graphics_pipeline.h"
-#include "bejzak_engine/vulkan_wrapper/pipeline/shader_program.h"
-#include "bejzak_engine/vulkan_wrapper/render_pass/render_pass.h"
-#include "bejzak_engine/vulkan_wrapper/resource_manager/asset_manager.h"
-#include "bejzak_engine/vulkan_wrapper/surface/surface.h"
-#include "bejzak_engine/vulkan_wrapper/swapchain/swapchain.h"
+#include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
+#include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
+#include "bejzak_engine/vulkan/wrapper/descriptor_set/bindless_descriptor_set_writer.h"
+#include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_pool.h"
+#include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set.h"
+#include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set_layout.h"
+#include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set_writer.h"
+#include "bejzak_engine/vulkan/wrapper/framebuffer/framebuffer.h"
+#include "bejzak_engine/vulkan/wrapper/instance/instance.h"
+#include "bejzak_engine/vulkan/wrapper/logical_device/logical_device.h"
+#include "bejzak_engine/vulkan/wrapper/memory_objects/buffer.h"
+#include "bejzak_engine/vulkan/wrapper/memory_objects/texture.h"
+#include "bejzak_engine/vulkan/wrapper/physical_device/physical_device.h"
+#include "bejzak_engine/vulkan/wrapper/render_pass/render_pass.h"
+#include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
+#include "bejzak_engine/vulkan/wrapper/surface/surface.h"
+#include "bejzak_engine/vulkan/wrapper/swapchain/swapchain.h"
+#include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 
 #include <unordered_map>
 
@@ -43,7 +43,8 @@ class Application {
   LogicalDevice _logicalDevice;
   Swapchain _swapchain;
   std::unique_ptr<CommandPool> _singleTimeCommandPool;
-  ShaderProgramManager _programManager;
+
+  PipelineManager _pipelineManager;
 
   std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
@@ -58,8 +59,7 @@ class Application {
   Renderpass _shadowRenderPass;
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
-  std::unique_ptr<GraphicsPipeline>
-      _shadowPipeline; // Does not have to be unique_ptr
+  Pipeline _shadowPipeline;
   TextureHandle _shadowHandle;
 
   // Skybox.
@@ -67,32 +67,26 @@ class Application {
   Buffer _indexBufferCube;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
-  std::unique_ptr<GraphicsPipeline>
-      _graphicsPipelineSkybox; // Does not have to be unique_ptr
-  ShaderProgram _skyboxShaderProgram;
+  Pipeline _skyboxPipeline;
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
-  ShaderProgram _mirrorCubemapShaderProgram;
   Renderpass _mirrorCubemapRenderPass;
   Framebuffer _mirrorCubemapFramebuffer;
-  std::unique_ptr<GraphicsPipeline> _mirrorCubemapPipeline;
+  Pipeline _mirrorCubemapPipeline;
   Buffer _mirrorCubemapUniformBuffer;
   BufferHandle _mirrorCubemapHandle;
   std::array<Texture, 2> _mirrorCubemapAttachments;
   TextureHandle _mirrorCubemapTextureHandle;
   // Second pass.
-  std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
-  ShaderProgram _envPhongShaderProgram;
+  // std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
 
   // PBR objects.
   std::vector<Object> objects;
   std::shared_ptr<DescriptorPool> _descriptorPool;
   std::shared_ptr<DescriptorPool> _dynamicDescriptorPool;
-  ShaderProgram _pbrShaderProgram;
-  std::unique_ptr<GraphicsPipeline>
-      _graphicsPipeline; // Does not have to be unique_ptr
+  Pipeline _graphicsPipeline;
   UniformBufferCamera _ubCamera;
   UniformBufferLight _ubLight;
 
@@ -100,7 +94,6 @@ class Application {
   Buffer _dynamicUniformBuffersCamera;
   DescriptorSet _dynamicDescriptorSet;
 
-  ShaderProgram _shadowShaderProgram;
   std::unique_ptr<BindlessDescriptorSetWriter>
       _bindlessWriter; // Does not have to be unique_ptr
 
