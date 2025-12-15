@@ -15,10 +15,10 @@
 #include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/lib/buffer/shared_buffer.h"
-#include "bejzak_engine/vulkan/wrapper/render_pass/attachment_layout.h"
-#include "bejzak_engine/vulkan/wrapper/util/check.h"
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 #include "bejzak_engine/vulkan/wrapper/pipeline/input_description.h"
+#include "bejzak_engine/vulkan/wrapper/render_pass/attachment_layout.h"
+#include "bejzak_engine/vulkan/wrapper/util/check.h"
 
 #include <algorithm>
 #include <array>
@@ -48,12 +48,12 @@ createBufferImageCopyRegions(std::span<const ImageSubresource> subresources) {
   return regions;
 }
 
-ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
-                              VkCommandBuffer commandBuffer,
-                              const AssetManager::ImageData &imageData,
-                              VkFormat format, float samplerAnisotropy) {
-  ASSIGN_OR_RETURN(
-      Texture texture,
+Texture createSkybox(const LogicalDevice &logicalDevice,
+                     VkCommandBuffer commandBuffer,
+                     const AssetManager::ImageData &imageData, VkFormat format,
+                     float samplerAnisotropy) {
+
+  Texture texture =
       TextureBuilder()
           .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
           .withExtent(imageData.width, imageData.height)
@@ -68,8 +68,8 @@ ErrorOr<Texture> createSkybox(const LogicalDevice &logicalDevice,
           .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
           .buildImage(logicalDevice, commandBuffer,
                       imageData.stagingBuffer.getVkBuffer(),
-                      createBufferImageCopyRegions(imageData.copyRegions)));
-  RETURN_IF_ERROR(texture.addCreateVkImageView(0, imageData.mipLevels, 0, 6));
+                      createBufferImageCopyRegions(imageData.copyRegions));
+  texture.addCreateVkImageView(0, imageData.mipLevels, 0, 6);
   return texture;
 }
 
@@ -79,8 +79,7 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
                                VkImageAspectFlags aspect, VkFormat format,
                                VkImageUsageFlags additionalUsage,
                                float samplerAnisotropy) {
-  ASSIGN_OR_RETURN(
-      Texture texture,
+  Texture texture =
       TextureBuilder()
           .withAspect(aspect)
           .withExtent(1024 * 2, 1024 * 2)
@@ -91,16 +90,16 @@ ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
           .withMaxAnisotropy(samplerAnisotropy)
           .withNumSamples(VK_SAMPLE_COUNT_1_BIT)
           .withMipmapMode(VK_SAMPLER_MIPMAP_MODE_NEAREST)
-          .buildAttachment(logicalDevice, commandBuffer));
-  RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, 0, 6));
+          .buildAttachment(logicalDevice, commandBuffer);
+  texture.addCreateVkImageView(0, 1, 0, 6);
   return texture;
 }
 
-ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
-                                 VkCommandBuffer commandBuffer, uint32_t width,
-                                 uint32_t height, VkFormat format) {
-  ASSIGN_OR_RETURN(
-      Texture texture,
+Texture createShadowmap(const LogicalDevice &logicalDevice,
+                        VkCommandBuffer commandBuffer, uint32_t width,
+                        uint32_t height, VkFormat format) {
+
+  Texture texture =
       TextureBuilder()
           .withAspect(VK_IMAGE_ASPECT_DEPTH_BIT)
           .withExtent(width, height)
@@ -112,31 +111,30 @@ ErrorOr<Texture> createShadowmap(const LogicalDevice &logicalDevice,
                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
           .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
           .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
-          .buildImageSampler(logicalDevice, commandBuffer));
-  RETURN_IF_ERROR(texture.addCreateVkImageView(0, 1, 0, 1));
+          .buildImageSampler(logicalDevice, commandBuffer);
+  texture.addCreateVkImageView(0, 1, 0, 1);
   return texture;
 }
 
-ErrorOr<Texture> createTexture2D(const LogicalDevice &logicalDevice,
-                                 VkCommandBuffer commandBuffer,
-                                 const AssetManager::ImageData &imageData,
-                                 VkFormat format, float samplerAnisotropy) {
-  ASSIGN_OR_RETURN(Texture texture,
-                   TextureBuilder()
-                       .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
-                       .withExtent(imageData.width, imageData.height)
-                       .withFormat(format)
-                       .withMipLevels(imageData.mipLevels)
-                       .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                  VK_IMAGE_USAGE_SAMPLED_BIT)
-                       .withMaxAnisotropy(samplerAnisotropy)
-                       .withMaxLod(static_cast<float>(imageData.mipLevels))
-                       .buildMipmapImage(logicalDevice, commandBuffer,
-                                         imageData.stagingBuffer.getVkBuffer(),
-                                         createBufferImageCopyRegions(
-                                             imageData.copyRegions)));
-  RETURN_IF_ERROR(texture.addCreateVkImageView(0, imageData.mipLevels, 0, 1));
+Texture createTexture2D(const LogicalDevice &logicalDevice,
+                        VkCommandBuffer commandBuffer,
+                        const AssetManager::ImageData &imageData,
+                        VkFormat format, float samplerAnisotropy) {
+  Texture texture = TextureBuilder()
+                        .withAspect(VK_IMAGE_ASPECT_COLOR_BIT)
+                        .withExtent(imageData.width, imageData.height)
+                        .withFormat(format)
+                        .withMipLevels(imageData.mipLevels)
+                        .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                   VK_IMAGE_USAGE_SAMPLED_BIT)
+                        .withMaxAnisotropy(samplerAnisotropy)
+                        .withMaxLod(static_cast<float>(imageData.mipLevels))
+                        .buildMipmapImage(logicalDevice, commandBuffer,
+                                          imageData.stagingBuffer.getVkBuffer(),
+                                          createBufferImageCopyRegions(
+                                              imageData.copyRegions));
+  texture.addCreateVkImageView(0, imageData.mipLevels, 0, 1);
   return texture;
 }
 
@@ -293,28 +291,24 @@ Status Application::init() {
   requiredExtensions.push_back(
       VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 
-  ASSIGN_OR_RETURN(
-      _instance,
-      Instance::create("Bejzak Engine", requiredExtensions, debugCallback));
+  _instance =
+      Instance::create("Bejzak Engine", requiredExtensions, debugCallback);
 #ifdef VALIDATION_LAYERS_ENABLED
   ASSIGN_OR_RETURN(_debugMessenger,
                    DebugMessenger::create(_instance, debugCallback));
 #endif // VALIDATION_LAYERS_ENABLED
 
-  ASSIGN_OR_RETURN(_surface, Surface::create(_instance, *_window));
-  ASSIGN_OR_RETURN(_physicalDevice,
-                   PhysicalDevice::create(_instance, _surface.getVkSurface()));
-  ASSIGN_OR_RETURN(_logicalDevice, LogicalDevice::create(*_physicalDevice));
+  _surface = Surface::create(_instance, *_window);
+  _physicalDevice = PhysicalDevice::create(_instance, _surface.getVkSurface());
+  _logicalDevice = LogicalDevice::create(*_physicalDevice);
   const Extent2D framebufferSize = _window->getFramebufferSize();
-  ASSIGN_OR_RETURN(
-      _swapchain,
+  _swapchain =
       SwapchainBuilder()
           .withPreferredPresentMode(VK_PRESENT_MODE_MAILBOX_KHR)
           .build(_logicalDevice, _surface.getVkSurface(),
-                 VkExtent2D{framebufferSize.width, framebufferSize.height}));
-  ASSIGN_OR_RETURN(_singleTimeCommandPool,
-                   CommandPool::create(_logicalDevice,
-                                       VK_COMMAND_POOL_CREATE_TRANSIENT_BIT));
+                 VkExtent2D{framebufferSize.width, framebufferSize.height});
+  _singleTimeCommandPool =
+      CommandPool::create(_logicalDevice, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
   return StatusOk();
 }
 
@@ -359,8 +353,7 @@ Status Application::createMirrorCubemap() {
   attachmentLayout.addDepthAttachment(VK_FORMAT_D16_UNORM,
                                       VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
-  ASSIGN_OR_RETURN(
-      _mirrorCubemapRenderPass,
+  _mirrorCubemapRenderPass =
       RenderpassBuilder(attachmentLayout)
           .withMultiView({0b111111}, {0b111111})
           .addDependency(VK_SUBPASS_EXTERNAL, 0,
@@ -373,14 +366,14 @@ Status Application::createMirrorCubemap() {
                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
           .addSubpass({0, 1})
-          .build(_logicalDevice));
+          .build(_logicalDevice);
 
-  ASSIGN_OR_RETURN(_mirrorCubemapFramebuffer,
-                   Framebuffer::createFromTextures(_mirrorCubemapRenderPass,
-                                                   _mirrorCubemapAttachments));
+  _mirrorCubemapFramebuffer = Framebuffer::createFromTextures(
+      _mirrorCubemapRenderPass, _mirrorCubemapAttachments);
 
-  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass));
-  ASSIGN_OR_RETURN(_mirrorCubemapPipeline, builder.getVkGraphicsPipelineCreateInfo());
+  _mirrorCubemapPipeline =
+      _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass)
+          .getVkGraphicsPipelineCreateInfo();
 
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
@@ -410,10 +403,9 @@ Status Application::createMirrorCubemap() {
       .lightProjView = _ubLight.projView,
       .lightPos = _ubLight.pos};
 
-  ASSIGN_OR_RETURN(
-      _mirrorCubemapUniformBuffer,
-      Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform)));
-  RETURN_IF_ERROR(_mirrorCubemapUniformBuffer.copyData(faceTransform));
+  _mirrorCubemapUniformBuffer =
+      Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform));
+  _mirrorCubemapUniformBuffer.copyData(faceTransform);
   _mirrorCubemapHandle =
       _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
   _mirrorCubemapTextureHandle =
@@ -426,8 +418,7 @@ Status Application::loadCubemap() {
   _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
   auto fileLoader = std::make_unique<StandardFileLoader>();
-  ASSIGN_OR_RETURN(std::string data,
-                   fileLoader->loadFileToString(MODELS_PATH "cube.obj"));
+  std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
   ASSIGN_OR_RETURN(const VertexData vertexDataCube,
                    loadObj(_assetManager, "cube.obj", data));
 
@@ -435,27 +426,24 @@ Status Application::loadCubemap() {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
-    ASSIGN_OR_RETURN(
-        const AssetManager::ImageData &imageData,
-        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"));
+    const AssetManager::ImageData &imageData =
+        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
 
-    ASSIGN_OR_RETURN(_textureCubemap,
-                     createSkybox(_logicalDevice, commandBuffer, imageData,
-                                  VK_FORMAT_R8G8B8A8_UNORM,
-                                  _physicalDevice->getMaxSamplerAnisotropy()));
+    _textureCubemap = createSkybox(_logicalDevice, commandBuffer, imageData,
+                                   VK_FORMAT_R8G8B8A8_UNORM,
+                                   _physicalDevice->getMaxSamplerAnisotropy());
 
-    ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                     _assetManager.getVertexData("cube.obj"));
-    ASSIGN_OR_RETURN(_vertexBufferCube,
-                     Buffer::createVertexBuffer(
-                         _logicalDevice, vData.buffers.at("P").getSize()));
-    RETURN_IF_ERROR(
-        _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P")));
-    ASSIGN_OR_RETURN(
-        _indexBufferCube,
-        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize()));
-    RETURN_IF_ERROR(
-        _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer));
+    const AssetManager::VertexData &vData =
+        _assetManager.getVertexData("cube.obj");
+    _vertexBufferCube = Buffer::createVertexBuffer(
+        _logicalDevice, vData.buffers.at("P").getSize());
+
+    _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
+
+    _indexBufferCube =
+        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
+
+    _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
     _indexBufferCubeType = vData.indexType;
   }
 
@@ -476,12 +464,11 @@ Status Application::loadObjects() {
     const std::string diffusePath =
         MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
     if (!_textures.contains(diffusePath)) {
-      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                       _assetManager.getImageData(diffusePath));
-      ASSIGN_OR_RETURN(Texture texture,
-                       createTexture2D(_logicalDevice, commandBuffer, imgData,
-                                       VK_FORMAT_R8G8B8A8_SRGB,
-                                       maxSamplerAnisotropy));
+      const AssetManager::ImageData &imgData =
+          _assetManager.getImageData(diffusePath);
+      Texture texture =
+          createTexture2D(_logicalDevice, commandBuffer, imgData,
+                          VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy);
       _textures.emplace(diffusePath,
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
@@ -490,12 +477,11 @@ Status Application::loadObjects() {
     const std::string normalPath =
         MODELS_PATH "sponza/" + sceneObject.normalTexture;
     if (!_textures.contains(normalPath)) {
-      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                       _assetManager.getImageData(normalPath));
-      ASSIGN_OR_RETURN(Texture texture,
-                       createTexture2D(_logicalDevice, commandBuffer, imgData,
-                                       VK_FORMAT_R8G8B8A8_UNORM,
-                                       maxSamplerAnisotropy));
+      const AssetManager::ImageData &imgData =
+          _assetManager.getImageData(normalPath);
+      Texture texture =
+          createTexture2D(_logicalDevice, commandBuffer, imgData,
+                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
       _textures.emplace(normalPath,
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
@@ -504,12 +490,11 @@ Status Application::loadObjects() {
     const std::string metallicRoughnessPath =
         MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
     if (!_textures.contains(metallicRoughnessPath)) {
-      ASSIGN_OR_RETURN(const AssetManager::ImageData &imgData,
-                       _assetManager.getImageData(metallicRoughnessPath));
-      ASSIGN_OR_RETURN(Texture texture,
-                       createTexture2D(_logicalDevice, commandBuffer, imgData,
-                                       VK_FORMAT_R8G8B8A8_UNORM,
-                                       maxSamplerAnisotropy));
+      const AssetManager::ImageData &imgData =
+          _assetManager.getImageData(metallicRoughnessPath);
+      Texture texture =
+          createTexture2D(_logicalDevice, commandBuffer, imgData,
+                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
       _textures.emplace(metallicRoughnessPath,
                         std::make_pair(_bindlessWriter->storeTexture(texture),
                                        std::move(texture)));
@@ -521,24 +506,21 @@ Status Application::loadObjects() {
         e, MaterialComponent{_textures[diffusePath].first,
                              _textures[normalPath].first,
                              _textures[metallicRoughnessPath].first});
-    ASSIGN_OR_RETURN(const AssetManager::VertexData &vData,
-                     _assetManager.getVertexData(sceneObject.vertexResource));
+    const AssetManager::VertexData &vData =
+        _assetManager.getVertexData(sceneObject.vertexResource);
     MeshComponent msh;
-    ASSIGN_OR_RETURN(msh.vertexBuffer,
-                     Buffer::createVertexBuffer(
-                         _logicalDevice, vData.buffers.at("PTNT").getSize()));
-    RETURN_IF_ERROR(
-        msh.vertexBuffer.copyBuffer(commandBuffer, vData.buffers.at("PTNT")));
-    ASSIGN_OR_RETURN(
-        msh.indexBuffer,
-        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize()));
-    RETURN_IF_ERROR(
-        msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer));
-    ASSIGN_OR_RETURN(msh.vertexBufferPrimitive,
-                     Buffer::createVertexBuffer(
-                         _logicalDevice, vData.buffers.at("P").getSize()));
-    RETURN_IF_ERROR(msh.vertexBufferPrimitive.copyBuffer(
-        commandBuffer, vData.buffers.at("P")));
+    msh.vertexBuffer = Buffer::createVertexBuffer(
+        _logicalDevice, vData.buffers.at("PTNT").getSize());
+
+    msh.vertexBuffer.copyBuffer(commandBuffer, vData.buffers.at("PTNT"));
+
+    msh.indexBuffer =
+        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
+
+    msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer);
+    msh.vertexBufferPrimitive = Buffer::createVertexBuffer(
+        _logicalDevice, vData.buffers.at("P").getSize());
+    msh.vertexBufferPrimitive.copyBuffer(commandBuffer, vData.buffers.at("P"));
     msh.indexType = vData.indexType;
     msh.aabb = createAABBfromVertices(sceneObject.positions, sceneObject.model);
     _registry.addComponent<MeshComponent>(e, std::move(msh));
@@ -572,25 +554,22 @@ Status Application::createOctreeScene() {
 Status Application::createDescriptorSets() {
   const uint32_t size = _logicalDevice.getPhysicalDevice().getMemoryAlignment(
       sizeof(UniformBufferCamera));
-  ASSIGN_OR_RETURN(
-      _dynamicUniformBuffersCamera,
-      Buffer::createUniformBuffer(_logicalDevice, MAX_FRAMES_IN_FLIGHT * size));
 
-  ASSIGN_OR_RETURN(
-      _descriptorPool,
-      DescriptorPool::create(_logicalDevice, 150,
-                             VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT));
-  ASSIGN_OR_RETURN(_dynamicDescriptorPool,
-                   DescriptorPool::create(_logicalDevice, 1));
+  _dynamicUniformBuffersCamera =
+      Buffer::createUniformBuffer(_logicalDevice, MAX_FRAMES_IN_FLIGHT * size);
 
-  ASSIGN_OR_RETURN(const VkDescriptorSetLayout bindlesslayout, _pipelineManager.getOrCreateBindlessLayout(_logicalDevice));
-  ASSIGN_OR_RETURN(_bindlessDescriptorSet,
-                   _descriptorPool->createDesriptorSet(bindlesslayout));
+  _descriptorPool = DescriptorPool::create(
+      _logicalDevice, 150, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+  _dynamicDescriptorPool = DescriptorPool::create(_logicalDevice, 1);
 
-  ASSIGN_OR_RETURN(const VkDescriptorSetLayout cameraLayout, _pipelineManager.getOrCreateCameraLayout(_logicalDevice));
-  ASSIGN_OR_RETURN(
-      _dynamicDescriptorSet,
-      _dynamicDescriptorPool->createDesriptorSet(cameraLayout));
+  const VkDescriptorSetLayout bindlesslayout =
+      _pipelineManager.getOrCreateBindlessLayout(_logicalDevice);
+  _bindlessDescriptorSet = _descriptorPool->createDesriptorSet(bindlesslayout);
+
+  const VkDescriptorSetLayout cameraLayout =
+      _pipelineManager.getOrCreateCameraLayout(_logicalDevice);
+  _dynamicDescriptorSet =
+      _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
   _bindlessWriter =
       std::make_unique<BindlessDescriptorSetWriter>(_bindlessDescriptorSet);
   _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
@@ -600,9 +579,8 @@ Status Application::createDescriptorSets() {
   _dynamicDescriptorSetWriter.writeDescriptorSet(
       _logicalDevice.getVkDevice(), _dynamicDescriptorSet.getVkDescriptorSet());
 
-  ASSIGN_OR_RETURN(
-      _lightBuffer,
-      Buffer::createUniformBuffer(_logicalDevice, sizeof(UniformBufferLight)));
+  _lightBuffer =
+      Buffer::createUniformBuffer(_logicalDevice, sizeof(UniformBufferLight));
   _lightHandle = _bindlessWriter->storeBuffer(_lightBuffer);
 
   _ubLight.pos = glm::vec3(15.1891f, 2.66408f, -0.841221f);
@@ -630,8 +608,7 @@ Status Application::createPresentResources() {
       .addDepthAttachment(VK_FORMAT_D24_UNORM_S8_UINT,
                           VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
-  ASSIGN_OR_RETURN(
-      _renderPass,
+  _renderPass =
       RenderpassBuilder(attachmentsLayout)
           .addDependency(VK_SUBPASS_EXTERNAL, 0,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
@@ -643,25 +620,22 @@ Status Application::createPresentResources() {
                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
           .addSubpass({0, 1, 2})
-          .build(_logicalDevice));
+          .build(_logicalDevice);
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
     for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
-      ASSIGN_OR_RETURN(auto framebuffer,
-                       Framebuffer::createFromSwapchain(
-                           commandBuffer, _renderPass, _swapchain.getExtent(),
-                           _swapchain.getSwapchainVkImageView(i),
-                           _attachments));
-      _framebuffers.push_back(std::move(framebuffer));
+      _framebuffers.push_back(Framebuffer::createFromSwapchain(
+          commandBuffer, _renderPass, _swapchain.getExtent(),
+          _swapchain.getSwapchainVkImageView(i), _attachments));
     }
   }
 
-  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createPBRProgram(_renderPass));
-  ASSIGN_OR_RETURN(_graphicsPipeline, builder.getVkGraphicsPipelineCreateInfo());
-  ASSIGN_OR_RETURN(GraphicsPipelineBuilder skyboxBuilder, _pipelineManager.createSkyboxProgram(_renderPass));
-  ASSIGN_OR_RETURN(_skyboxPipeline, skyboxBuilder.getVkGraphicsPipelineCreateInfo());
+  _graphicsPipeline = _pipelineManager.createPBRProgram(_renderPass)
+                          .getVkGraphicsPipelineCreateInfo();
+  _skyboxPipeline = _pipelineManager.createSkyboxProgram(_renderPass)
+                        .getVkGraphicsPipelineCreateInfo();
   return StatusOk();
 }
 
@@ -670,9 +644,8 @@ Status Application::createShadowResources() {
     // TODO: Should not be in this function.
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-    ASSIGN_OR_RETURN(_shadowMap,
-                     createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
-                                     1024 * 2, VK_FORMAT_D32_SFLOAT));
+    _shadowMap = createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
+                                 1024 * 2, VK_FORMAT_D32_SFLOAT);
   }
   _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
 
@@ -680,15 +653,13 @@ Status Application::createShadowResources() {
   attachmentLayout.addShadowAttachment(
       VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-  ASSIGN_OR_RETURN(_shadowRenderPass, RenderpassBuilder(attachmentLayout)
-                                          .addSubpass({0})
-                                          .build(_logicalDevice));
-  ASSIGN_OR_RETURN(_shadowFramebuffer,
-                   Framebuffer::createFromTextures(_shadowRenderPass,
-                                                   std::span(&_shadowMap, 1)));
+  _shadowRenderPass =
+      RenderpassBuilder(attachmentLayout).addSubpass({0}).build(_logicalDevice);
+  _shadowFramebuffer = Framebuffer::createFromTextures(
+      _shadowRenderPass, std::span(&_shadowMap, 1));
 
-  ASSIGN_OR_RETURN(GraphicsPipelineBuilder builder, _pipelineManager.createShadowProgram(_shadowRenderPass));
-  ASSIGN_OR_RETURN(_shadowPipeline, builder.getVkGraphicsPipelineCreateInfo());
+  _shadowPipeline = _pipelineManager.createShadowProgram(_shadowRenderPass)
+                        .getVkGraphicsPipelineCreateInfo();
   return StatusOk();
 }
 
@@ -792,11 +763,14 @@ Status Application::createSyncObjects() {
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     CHECK_VKCMD(vkCreateSemaphore(_logicalDevice.getVkDevice(), &semaphoreInfo,
-                                  nullptr, &_imageAvailableSemaphores[i]));
+                                  nullptr, &_imageAvailableSemaphores[i]),
+                "Failed to create VkSemaphore.");
     CHECK_VKCMD(vkCreateSemaphore(_logicalDevice.getVkDevice(), &semaphoreInfo,
-                                  nullptr, &_renderFinishedSemaphores[i]));
+                                  nullptr, &_renderFinishedSemaphores[i]),
+                "Failed to create VkSemaphore.");
     CHECK_VKCMD(vkCreateFence(_logicalDevice.getVkDevice(), &fenceInfo, nullptr,
-                              &_inFlightFences[i]));
+                              &_inFlightFences[i]),
+                "Failed to create VkFence.");
   }
   return StatusOk();
 }
@@ -812,20 +786,17 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
 
 Status Application::createCommandBuffers() {
   for (int i = 0; i <= MAX_THREADS_IN_POOL; i++) {
-    ASSIGN_OR_RETURN(
-        _commandPools[i],
-        CommandPool::create(_logicalDevice,
-                            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+
+    _commandPools[i] = CommandPool::create(
+        _logicalDevice, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
   }
-  ASSIGN_OR_RETURN(_primaryCommandBuffer,
-                   _commandPools[MAX_THREADS_IN_POOL]
-                       ->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
-                           VK_COMMAND_BUFFER_LEVEL_PRIMARY));
+  _primaryCommandBuffer = _commandPools[MAX_THREADS_IN_POOL]
+                              ->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
+                                  VK_COMMAND_BUFFER_LEVEL_PRIMARY);
   for (int i = 0; i < MAX_THREADS_IN_POOL; i++) {
-    ASSIGN_OR_RETURN(
-        _secondaryCommandBuffers[i],
+    _secondaryCommandBuffers[i] =
         _commandPools[i]->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
-            VK_COMMAND_BUFFER_LEVEL_SECONDARY));
+            VK_COMMAND_BUFFER_LEVEL_SECONDARY);
   }
   return StatusOk();
 }
@@ -860,10 +831,10 @@ void Application::recordOctreeSecondaryCommandBuffer(
           .shadow = (uint32_t)_shadowHandle,
       };
 
-      vkCmdPushConstants(
-          commandBuffer, _graphicsPipeline.getVkPipelineLayout(),
-          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-          sizeof(pc), &pc);
+      vkCmdPushConstants(commandBuffer, _graphicsPipeline.getVkPipelineLayout(),
+                         VK_SHADER_STAGE_VERTEX_BIT |
+                             VK_SHADER_STAGE_FRAGMENT_BIT,
+                         0, sizeof(pc), &pc);
 
       const auto &meshComponent =
           _registry.getComponent<MeshComponent>(object->getEntity());
@@ -938,8 +909,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
-    vkCmdBindPipeline(commandBuffer,
-                      _graphicsPipeline.getVkPipelineBindPoint(),
+    vkCmdBindPipeline(commandBuffer, _graphicsPipeline.getVkPipelineBindPoint(),
                       _graphicsPipeline.getVkPipeline());
 
     const OctreeNode *root = _octree->getRoot();
@@ -963,7 +933,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     recordOctreeSecondaryCommandBuffer(commandBuffer, root, planes);
 
-    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer));
+    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer),
+                "Failed to vkEndCommandBuffer.");
 
     return StatusOk();
   });
@@ -985,8 +956,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
 
-    vkCmdBindPipeline(commandBuffer,
-                      _skyboxPipeline.getVkPipelineBindPoint(),
+    vkCmdBindPipeline(commandBuffer, _skyboxPipeline.getVkPipelineBindPoint(),
                       _skyboxPipeline.getVkPipeline());
 
     static constexpr VkDeviceSize offsets[] = {0};
@@ -1001,25 +971,26 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         .proj = _camera.getProjectionMatrix(),
         .view = _camera.getViewMatrix(),
         .skyboxHandle = static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
-    vkCmdPushConstants(
-        commandBuffer, _skyboxPipeline.getVkPipelineLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-        sizeof(pc), &pc);
+    vkCmdPushConstants(commandBuffer, _skyboxPipeline.getVkPipelineLayout(),
+                       VK_SHADER_STAGE_VERTEX_BIT |
+                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(pc), &pc);
 
     const VkDescriptorSet descriptorSet =
         _bindlessDescriptorSet.getVkDescriptorSet();
 
     vkCmdBindDescriptorSets(commandBuffer,
                             _skyboxPipeline.getVkPipelineBindPoint(),
-                            _skyboxPipeline.getVkPipelineLayout(), 0,
-                            1, &descriptorSet, 0, nullptr);
+                            _skyboxPipeline.getVkPipelineLayout(), 0, 1,
+                            &descriptorSet, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
                      _indexBufferCube.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 
-    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer));
+    CHECK_VKCMD(vkEndCommandBuffer(commandBuffer),
+                "Failed to vkEndCommandBuffer.");
 
     return StatusOk();
   });
@@ -1136,12 +1107,12 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
       _bindlessDescriptorSet.getVkDescriptorSet()};
 
   vkCmdBindPipeline(commandBuffer,
-      _mirrorCubemapPipeline.getVkPipelineBindPoint(),
-      _mirrorCubemapPipeline.getVkPipeline());
+                    _mirrorCubemapPipeline.getVkPipelineBindPoint(),
+                    _mirrorCubemapPipeline.getVkPipeline());
 
   vkCmdBindDescriptorSets(commandBuffer,
-      _mirrorCubemapPipeline.getVkPipelineBindPoint(),
-      _mirrorCubemapPipeline.getVkPipelineLayout(), 0, 1,
+                          _mirrorCubemapPipeline.getVkPipelineBindPoint(),
+                          _mirrorCubemapPipeline.getVkPipelineLayout(), 0, 1,
                           descriptorSets, 0, nullptr);
 
   const VkDeviceSize offsets[] = {0};
@@ -1197,11 +1168,10 @@ Status Application::recreateSwapChain() {
   }
   vkDeviceWaitIdle(_logicalDevice.getVkDevice());
 
-  ASSIGN_OR_RETURN(_swapchain,
-                   SwapchainBuilder()
-                       .withOldSwapchain(_swapchain.getVkSwapchain())
-                       .build(_logicalDevice, _surface.getVkSurface(),
-                              VkExtent2D{extent.width, extent.height}));
+  _swapchain = SwapchainBuilder()
+                   .withOldSwapchain(_swapchain.getVkSwapchain())
+                   .build(_logicalDevice, _surface.getVkSurface(),
+                          VkExtent2D{extent.width, extent.height});
   _attachments.clear();
   _framebuffers.clear();
 
@@ -1209,11 +1179,9 @@ Status Application::recreateSwapChain() {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
     for (uint8_t i = 0; i < _swapchain.getImagesCount(); ++i) {
-      ASSIGN_OR_RETURN(Framebuffer framebuffer,
-                       Framebuffer::createFromSwapchain(
-                           commandBuffer, _renderPass, _swapchain.getExtent(),
-                           _swapchain.getSwapchainVkImageView(i),
-                           _attachments));
+      Framebuffer framebuffer = Framebuffer::createFromSwapchain(
+          commandBuffer, _renderPass, _swapchain.getExtent(),
+          _swapchain.getSwapchainVkImageView(i), _attachments);
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
