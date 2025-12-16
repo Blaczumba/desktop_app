@@ -7,7 +7,6 @@
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
 #include "bejzak_engine/common/object/object.h"
 #include "bejzak_engine/common/scene/octree.h"
-#include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
@@ -127,11 +126,11 @@ public:
   void run();
 
 private:
-  Status init();
+  void init();
   void setInput();
   void draw();
-  Status createCommandBuffers();
-  Status createSyncObjects();
+  void createCommandBuffers();
+  void createSyncObjects();
   void updateUniformBuffer(uint32_t currentImage);
   void recordCommandBuffer(uint32_t imageIndex);
   void recordOctreeSecondaryCommandBuffer(const VkCommandBuffer commandBuffer,
@@ -139,14 +138,14 @@ private:
                                           std::span<const glm::vec4> planes);
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
   void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
-  Status recreateSwapChain();
-  Status createMirrorCubemap();
+  void recreateSwapChain();
+  void createMirrorCubemap();
 
-  Status createDescriptorSets();
-  Status createPresentResources();
-  Status createShadowResources();
+  void createDescriptorSets();
+  void createPresentResources();
+  void createShadowResources();
 
-  Status loadObjects();
-  Status createOctreeScene();
-  Status loadCubemap();
+  void loadObjects();
+  void createOctreeScene();
+  void loadCubemap();
 };

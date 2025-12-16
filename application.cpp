@@ -73,12 +73,12 @@ Texture createSkybox(const LogicalDevice &logicalDevice,
   return texture;
 }
 
-ErrorOr<Texture> createCubemap(const LogicalDevice &logicalDevice,
-                               VkCommandBuffer commandBuffer,
+Texture createCubemap(const LogicalDevice &logicalDevice,
+                      VkCommandBuffer commandBuffer,
 
-                               VkImageAspectFlags aspect, VkFormat format,
-                               VkImageUsageFlags additionalUsage,
-                               float samplerAnisotropy) {
+                      VkImageAspectFlags aspect, VkFormat format,
+                      VkImageUsageFlags additionalUsage,
+                      float samplerAnisotropy) {
   Texture texture =
       TextureBuilder()
           .withAspect(aspect)
@@ -138,78 +138,6 @@ Texture createTexture2D(const LogicalDevice &logicalDevice,
   return texture;
 }
 
-constexpr std::string_view engineErrorToString(EngineError error) {
-  switch (error) {
-  case EngineError::INDEX_OUT_OF_RANGE:
-    return "Index out of range";
-  case EngineError::EMPTY_COLLECTION:
-    return "Empty collection";
-  case EngineError::SIZE_MISMATCH:
-    return "Size mismatch";
-  case EngineError::NOT_RECOGNIZED_TYPE:
-    return "Not recognized type";
-  case EngineError::NOT_FOUND:
-    return "Not found";
-  case EngineError::NOT_MAPPED:
-    return "Not mapped";
-  case EngineError::RESOURCE_EXHAUSTED:
-    return "Resource exhausted";
-  case EngineError::LOAD_FAILURE:
-    return "Load failure";
-  case EngineError::FLAG_NOT_SPECIFIED:
-    return "Flag not specified";
-  }
-  return "Unknown EngineError";
-}
-
-constexpr std::string_view vkResultToString(int result) {
-  switch (result) {
-  case VK_SUCCESS:
-    return "VK_SUCCESS";
-  case VK_NOT_READY:
-    return "VK_NOT_READY";
-  case VK_TIMEOUT:
-    return "VK_TIMEOUT";
-  case VK_EVENT_SET:
-    return "VK_EVENT_SET";
-  case VK_EVENT_RESET:
-    return "VK_EVENT_RESET";
-  case VK_INCOMPLETE:
-    return "VK_INCOMPLETE";
-  case VK_ERROR_OUT_OF_HOST_MEMORY:
-    return "VK_ERROR_OUT_OF_HOST_MEMORY";
-  case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-    return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-  case VK_ERROR_INITIALIZATION_FAILED:
-    return "VK_ERROR_INITIALIZATION_FAILED";
-  case VK_ERROR_DEVICE_LOST:
-    return "VK_ERROR_DEVICE_LOST";
-  case VK_ERROR_MEMORY_MAP_FAILED:
-    return "VK_ERROR_MEMORY_MAP_FAILED";
-  case VK_ERROR_LAYER_NOT_PRESENT:
-    return "VK_ERROR_LAYER_NOT_PRESENT";
-  case VK_ERROR_EXTENSION_NOT_PRESENT:
-    return "VK_ERROR_EXTENSION_NOT_PRESENT";
-  case VK_ERROR_FEATURE_NOT_PRESENT:
-    return "VK_ERROR_FEATURE_NOT_PRESENT";
-  case VK_ERROR_INCOMPATIBLE_DRIVER:
-    return "VK_ERROR_INCOMPATIBLE_DRIVER";
-  case VK_ERROR_TOO_MANY_OBJECTS:
-    return "VK_ERROR_TOO_MANY_OBJECTS";
-  case VK_ERROR_FORMAT_NOT_SUPPORTED:
-    return "VK_ERROR_FORMAT_NOT_SUPPORTED";
-  }
-  return "Unknown VkResult error code";
-}
-
-std::string_view errorToString(const ErrorType &error) {
-  if (std::holds_alternative<int>(error)) {
-    return vkResultToString(std::get<int>(error));
-  } else {
-    return engineErrorToString(std::get<EngineError>(error));
-  }
-}
-
 } // namespace
 
 Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
@@ -217,55 +145,17 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
                                     0.01f, 50.0f},
               glm::vec3(0.0f), 5.5f, 0.01f),
       _pipelineManager(fileLoader) {
-  if (Status status = init(); !status) {
-    std::println("Failed to initialize application: {}",
-                 errorToString(status.error()));
-  }
-
+  init();
   _assetManager = AssetManager(_logicalDevice, fileLoader);
-
-  if (Status status = loadCubemap(); !status) {
-    std::println("Failed to load cubemap: {}", errorToString(status.error()));
-  }
-
-  if (Status status = createDescriptorSets(); !status) {
-    std::println("Failed to create descriptor sets: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = loadObjects(); !status) {
-    std::println("Failed to load objects: {}", errorToString(status.error()));
-  }
-
-  if (Status status = createOctreeScene(); !status) {
-    std::println("Failed to create octree scene: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = createPresentResources(); !status) {
-    std::println("Failed to create present resources: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = createShadowResources(); !status) {
-    std::println("Failed to create shadow resources: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = createCommandBuffers(); !status) {
-    std::println("Failed to create command buffers: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = createSyncObjects(); !status) {
-    std::println("Failed to create sync objects: {}",
-                 errorToString(status.error()));
-  }
-
-  if (Status status = createMirrorCubemap(); !status) {
-    std::println("Failed to create mirror cubemap: {}",
-                 errorToString(status.error()));
-  }
+  loadCubemap();
+  createDescriptorSets();
+  loadObjects();
+  createOctreeScene();
+  createPresentResources();
+  createShadowResources();
+  createCommandBuffers();
+  createSyncObjects();
+  createMirrorCubemap();
   setInput();
 }
 
@@ -281,7 +171,7 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   return VK_FALSE;
 }
 
-Status Application::init() {
+void Application::init() {
   _window = std::make_unique<WindowGlfw>("Bejzak Engine", 1920, 1080);
   _mouseKeyboardManager = _window->createMouseKeyboardManager();
   std::vector<const char *> requiredExtensions = _window->getVulkanExtensions();
@@ -294,8 +184,7 @@ Status Application::init() {
   _instance =
       Instance::create("Bejzak Engine", requiredExtensions, debugCallback);
 #ifdef VALIDATION_LAYERS_ENABLED
-  ASSIGN_OR_RETURN(_debugMessenger,
-                   DebugMessenger::create(_instance, debugCallback));
+  _debugMessenger = DebugMessenger::create(_instance, debugCallback);
 #endif // VALIDATION_LAYERS_ENABLED
 
   _surface = Surface::create(_instance, *_window);
@@ -309,7 +198,6 @@ Status Application::init() {
                  VkExtent2D{framebufferSize.width, framebufferSize.height});
   _singleTimeCommandPool =
       CommandPool::create(_logicalDevice, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-  return StatusOk();
 }
 
 void Application::setInput() {
@@ -328,22 +216,20 @@ void Application::setInput() {
       });
 }
 
-Status Application::createMirrorCubemap() {
+void Application::createMirrorCubemap() {
   // First pass for rendering the environment map.
   const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
-    ASSIGN_OR_RETURN(
-        _mirrorCubemapAttachments[0],
+
+    _mirrorCubemapAttachments[0] =
         createCubemap(_logicalDevice, handle.getCommandBuffer(),
                       VK_IMAGE_ASPECT_COLOR_BIT, VK_FORMAT_R8G8B8A8_SRGB,
-                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samplerAnisotropy));
-    ASSIGN_OR_RETURN(_mirrorCubemapAttachments[1],
-                     createCubemap(_logicalDevice, handle.getCommandBuffer(),
-                                   VK_IMAGE_ASPECT_DEPTH_BIT,
-                                   VK_FORMAT_D16_UNORM,
-                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                                   samplerAnisotropy));
+                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samplerAnisotropy);
+    _mirrorCubemapAttachments[1] = createCubemap(
+        _logicalDevice, handle.getCommandBuffer(), VK_IMAGE_ASPECT_DEPTH_BIT,
+        VK_FORMAT_D16_UNORM, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        samplerAnisotropy);
   }
 
   AttachmentLayout attachmentLayout;
@@ -410,17 +296,15 @@ Status Application::createMirrorCubemap() {
       _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
   _mirrorCubemapTextureHandle =
       _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
-
-  return StatusOk();
 }
 
-Status Application::loadCubemap() {
+void Application::loadCubemap() {
   _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
   // TODO: temporal experiment
   auto fileLoader = std::make_unique<StandardFileLoader>();
   std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
-  ASSIGN_OR_RETURN(const VertexData vertexDataCube,
-                   loadObj(_assetManager, "cube.obj", data));
+
+  const VertexData vertexDataCube = loadObj(_assetManager, "cube.obj", data);
 
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -446,15 +330,11 @@ Status Application::loadCubemap() {
     _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
     _indexBufferCubeType = vData.indexType;
   }
-
-  return StatusOk();
 }
 
-Status Application::loadObjects() {
-  // TODO needs refactoring
-  ASSIGN_OR_RETURN(
-      const std::vector<VertexData> sceneData,
-      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf"));
+void Application::loadObjects() {
+  const std::vector<VertexData> sceneData =
+      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
@@ -529,11 +409,9 @@ Status Application::loadObjects() {
     trsf.model = sceneObject.model;
     _registry.addComponent<TransformComponent>(e, std::move(trsf));
   }
-
-  return StatusOk();
 }
 
-Status Application::createOctreeScene() {
+void Application::createOctreeScene() {
   AABB sceneAABB =
       _registry.getComponent<MeshComponent>(_objects[0].getEntity()).aabb;
 
@@ -547,11 +425,9 @@ Status Application::createOctreeScene() {
     _octree->addObject(
         &object,
         _registry.getComponent<MeshComponent>(object.getEntity()).aabb);
-
-  return StatusOk();
 }
 
-Status Application::createDescriptorSets() {
+void Application::createDescriptorSets() {
   const uint32_t size = _logicalDevice.getPhysicalDevice().getMemoryAlignment(
       sizeof(UniformBufferCamera));
 
@@ -591,11 +467,9 @@ Status Application::createDescriptorSets() {
                                       glm::vec3(-3.82383f, 3.66503f, 1.30751f),
                                       glm::vec3(0.0f, 1.0f, 0.0f));
   _lightBuffer.copyData(_ubLight, 0);
-
-  return StatusOk();
 }
 
-Status Application::createPresentResources() {
+void Application::createPresentResources() {
   static constexpr VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
   const VkFormat swapchainImageFormat = _swapchain.getVkFormat();
 
@@ -636,10 +510,9 @@ Status Application::createPresentResources() {
                           .getVkGraphicsPipelineCreateInfo();
   _skyboxPipeline = _pipelineManager.createSkyboxProgram(_renderPass)
                         .getVkGraphicsPipelineCreateInfo();
-  return StatusOk();
 }
 
-Status Application::createShadowResources() {
+void Application::createShadowResources() {
   {
     // TODO: Should not be in this function.
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
@@ -660,7 +533,6 @@ Status Application::createShadowResources() {
 
   _shadowPipeline = _pipelineManager.createShadowProgram(_shadowRenderPass)
                         .getVkGraphicsPipelineCreateInfo();
-  return StatusOk();
 }
 
 Application::~Application() {
@@ -754,7 +626,7 @@ void Application::draw() {
   }
 }
 
-Status Application::createSyncObjects() {
+void Application::createSyncObjects() {
   static constexpr VkSemaphoreCreateInfo semaphoreInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   static constexpr VkFenceCreateInfo fenceInfo = {
@@ -772,7 +644,6 @@ Status Application::createSyncObjects() {
                               &_inFlightFences[i]),
                 "Failed to create VkFence.");
   }
-  return StatusOk();
 }
 
 void Application::updateUniformBuffer(uint32_t currentFrame) {
@@ -784,7 +655,7 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
                                     sizeof(UniformBufferCamera)));
 }
 
-Status Application::createCommandBuffers() {
+void Application::createCommandBuffers() {
   for (int i = 0; i <= MAX_THREADS_IN_POOL; i++) {
 
     _commandPools[i] = CommandPool::create(
@@ -798,7 +669,6 @@ Status Application::createCommandBuffers() {
         _commandPools[i]->createCommandBuffers<MAX_FRAMES_IN_FLIGHT>(
             VK_COMMAND_BUFFER_LEVEL_SECONDARY);
   }
-  return StatusOk();
 }
 
 void Application::recordOctreeSecondaryCommandBuffer(
@@ -899,13 +769,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      RETURN_IF_ERROR(
+      
           _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
-              framebuffer, &scissorViewportInheritance));
+              framebuffer, &scissorViewportInheritance);
     } else {
-      RETURN_IF_ERROR(
+      
           _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
-              framebuffer, nullptr));
+              framebuffer, nullptr);
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -945,13 +815,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _secondaryCommandBuffers[1][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      RETURN_IF_ERROR(
+      
           _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
-              framebuffer, &scissorViewportInheritance));
+              framebuffer, &scissorViewportInheritance);
     } else {
-      RETURN_IF_ERROR(
+      
           _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
-              framebuffer, nullptr));
+              framebuffer, nullptr);
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -1154,7 +1024,7 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
   vkCmdEndRenderPass(commandBuffer);
 }
 
-Status Application::recreateSwapChain() {
+void Application::recreateSwapChain() {
   Extent2D extent{};
   while (extent.width == 0 || extent.height == 0) {
     extent = _window->getFramebufferSize();
@@ -1185,6 +1055,4 @@ Status Application::recreateSwapChain() {
       _framebuffers.push_back(std::move(framebuffer));
     }
   }
-
-  return StatusOk();
 }
