@@ -1,13 +1,15 @@
 #pragma once
 
-#include "bejzak_engine/common/util/primitives.h"
 #include "bejzak_engine/common/camera/camera.h"
 #include "bejzak_engine/common/camera/projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
 #include "bejzak_engine/common/object/object.h"
 #include "bejzak_engine/common/scene/octree.h"
+#include "bejzak_engine/common/util/primitives.h"
 #include "bejzak_engine/common/window/window_glfw.h"
+#include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
+#include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/bindless_descriptor_set_writer.h"
@@ -22,10 +24,8 @@
 #include "bejzak_engine/vulkan/wrapper/memory_objects/texture.h"
 #include "bejzak_engine/vulkan/wrapper/physical_device/physical_device.h"
 #include "bejzak_engine/vulkan/wrapper/render_pass/render_pass.h"
-#include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
 #include "bejzak_engine/vulkan/wrapper/surface/surface.h"
 #include "bejzak_engine/vulkan/wrapper/swapchain/swapchain.h"
-#include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 
 #include <unordered_map>
 
@@ -139,9 +139,10 @@ private:
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
   void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
   void recreateSwapChain();
-  void createMirrorCubemap();
+  void createMirrorCubemapResources();
 
   void createDescriptorSets();
+  void createGraphicsPipelines();
   void createPresentResources();
   void createShadowResources();
 

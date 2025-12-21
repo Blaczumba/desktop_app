@@ -151,10 +151,11 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
   loadObjects();
   createOctreeScene();
   createPresentResources();
+  createMirrorCubemapResources();
   createShadowResources();
+  createGraphicsPipelines();
   createCommandBuffers();
   createSyncObjects();
-  createMirrorCubemap();
   setInput();
 }
 
@@ -215,7 +216,7 @@ void Application::setInput() {
       });
 }
 
-void Application::createMirrorCubemap() {
+void Application::createMirrorCubemapResources() {
   // First pass for rendering the environment map.
   const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   {
@@ -255,10 +256,6 @@ void Application::createMirrorCubemap() {
 
   _mirrorCubemapFramebuffer = Framebuffer::createFromTextures(
       _mirrorCubemapRenderPass, _mirrorCubemapAttachments);
-
-  _mirrorCubemapPipeline =
-      _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass)
-          .getVkGraphicsPipelineCreateInfo();
 
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
@@ -468,6 +465,20 @@ void Application::createDescriptorSets() {
   _lightBuffer.copyData(_ubLight, 0);
 }
 
+void Application::createGraphicsPipelines() {
+  const GraphicsPipelineBuilder pipelineBuilders[] = {
+      _pipelineManager.createPBRProgram(_renderPass),
+      _pipelineManager.createSkyboxProgram(_renderPass),
+      _pipelineManager.createShadowProgram(_shadowRenderPass),
+      _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass)};
+  std::vector<Pipeline> pipelines =
+      GraphicsPipelineBuilder::createPipelines(pipelineBuilders);
+  _graphicsPipeline = std::move(pipelines[0]);
+  _skyboxPipeline = std::move(pipelines[1]);
+  _shadowPipeline = std::move(pipelines[2]);
+  _mirrorCubemapPipeline = std::move(pipelines[3]);
+}
+
 void Application::createPresentResources() {
   static constexpr VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_4_BIT;
   const VkFormat swapchainImageFormat = _swapchain.getVkFormat();
@@ -504,11 +515,6 @@ void Application::createPresentResources() {
           _swapchain.getSwapchainVkImageView(i), _attachments));
     }
   }
-
-  _graphicsPipeline = _pipelineManager.createPBRProgram(_renderPass)
-                          .getVkGraphicsPipelineCreateInfo();
-  _skyboxPipeline = _pipelineManager.createSkyboxProgram(_renderPass)
-                        .getVkGraphicsPipelineCreateInfo();
 }
 
 void Application::createShadowResources() {
@@ -529,9 +535,6 @@ void Application::createShadowResources() {
       RenderpassBuilder(attachmentLayout).addSubpass({0}).build(_logicalDevice);
   _shadowFramebuffer = Framebuffer::createFromTextures(
       _shadowRenderPass, std::span(&_shadowMap, 1));
-
-  _shadowPipeline = _pipelineManager.createShadowProgram(_shadowRenderPass)
-                        .getVkGraphicsPipelineCreateInfo();
 }
 
 Application::~Application() {
@@ -768,13 +771,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      
-          _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
-              framebuffer, &scissorViewportInheritance);
+
+      _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
+          framebuffer, &scissorViewportInheritance);
     } else {
-      
-          _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(
-              framebuffer, nullptr);
+
+      _secondaryCommandBuffers[0][_currentFrame].beginAsSecondary(framebuffer,
+                                                                  nullptr);
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
@@ -812,13 +815,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _secondaryCommandBuffers[1][_currentFrame].getVkCommandBuffer();
 
     if (viewportScissorInheritance) [[likely]] {
-      
-          _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
-              framebuffer, &scissorViewportInheritance);
+
+      _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
+          framebuffer, &scissorViewportInheritance);
     } else {
-      
-          _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(
-              framebuffer, nullptr);
+
+      _secondaryCommandBuffers[1][_currentFrame].beginAsSecondary(framebuffer,
+                                                                  nullptr);
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
