@@ -12,7 +12,6 @@
 #include "bejzak_engine/common/model_loader/model_loader.h"
 #include "bejzak_engine/common/model_loader/obj_loader/obj_loader.h"
 #include "bejzak_engine/common/model_loader/tiny_gltf_loader/tiny_gltf_loader.h"
-#include "bejzak_engine/common/status/status.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/lib/buffer/shared_buffer.h"
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
@@ -762,9 +761,9 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     };
   }
 
-  std::future<Status> futures[MAX_THREADS_IN_POOL];
+  std::future<void> futures[MAX_THREADS_IN_POOL];
 
-  futures[0] = std::async(std::launch::async, [&]() -> Status {
+  futures[0] = std::async(std::launch::async, [&]() -> void {
     const VkCommandBuffer commandBuffer =
         _secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer();
 
@@ -805,11 +804,9 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     CHECK_VKCMD(vkEndCommandBuffer(commandBuffer),
                 "Failed to vkEndCommandBuffer.");
-
-    return StatusOk();
   });
 
-  futures[1] = std::async(std::launch::async, [&]() -> Status {
+  futures[1] = std::async(std::launch::async, [&]() -> void {
     // Skybox
     const VkCommandBuffer commandBuffer =
         _secondaryCommandBuffers[1][_currentFrame].getVkCommandBuffer();
@@ -861,12 +858,10 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     CHECK_VKCMD(vkEndCommandBuffer(commandBuffer),
                 "Failed to vkEndCommandBuffer.");
-
-    return StatusOk();
   });
 
   std::for_each(std::begin(futures), std::end(futures),
-                [](std::future<Status> &future) { future.wait(); });
+                [](std::future<void> &future) { future.wait(); });
 
   primaryCommandBuffer.executeSecondaryCommandBuffers(
       {_secondaryCommandBuffers[0][_currentFrame].getVkCommandBuffer(),
