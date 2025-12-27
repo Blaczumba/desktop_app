@@ -26,6 +26,7 @@
 #include "bejzak_engine/vulkan/wrapper/render_pass/render_pass.h"
 #include "bejzak_engine/vulkan/wrapper/surface/surface.h"
 #include "bejzak_engine/vulkan/wrapper/swapchain/swapchain.h"
+#include "bejzak_engine/common/model_loader/model_loader.h"
 
 #include <unordered_map>
 
@@ -71,15 +72,15 @@ class Application {
 
   // Mirror cubemap
   // First pass.
-  Renderpass _mirrorCubemapRenderPass;
-  Framebuffer _mirrorCubemapFramebuffer;
-  Pipeline _mirrorCubemapPipeline;
-  Buffer _mirrorCubemapUniformBuffer;
-  BufferHandle _mirrorCubemapHandle;
-  std::array<Texture, 2> _mirrorCubemapAttachments;
-  TextureHandle _mirrorCubemapTextureHandle;
+  Renderpass _envMappingRenderPass;
+  Framebuffer _envMappingFramebuffer;
+  Pipeline _envMappingPipeline;
+  Buffer _envMappingUniformBuffer;
+  BufferHandle _envMappingHandle;
+  std::array<Texture, 2> _envMappingAttachments;
+  TextureHandle _envMappingTextureHandle;
   // Second pass.
-  // std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
+  Pipeline _phongEnvMappingPipeline;
 
   // PBR objects.
   std::vector<Object> objects;
@@ -137,16 +138,16 @@ private:
                                           const OctreeNode *node,
                                           std::span<const glm::vec4> planes);
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
-  void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
+  void recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer);
   void recreateSwapChain();
-  void createMirrorCubemapResources();
 
   void createDescriptorSets();
   void createGraphicsPipelines();
   void createPresentResources();
   void createShadowResources();
+  void createEnvMappingResources();
 
-  void loadObjects();
+  void loadObjects(std::span<const VertexData> sceneData);
   void createOctreeScene();
   void loadCubemap();
 };

@@ -18,6 +18,7 @@
 #include "bejzak_engine/vulkan/wrapper/pipeline/input_description.h"
 #include "bejzak_engine/vulkan/wrapper/render_pass/attachment_layout.h"
 #include "bejzak_engine/vulkan/wrapper/util/check.h"
+#include "bejzak_engine/lib/inplace_vector/inplace_vector.h"
 
 #include <algorithm>
 #include <array>
@@ -146,16 +147,22 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
       _pipelineManager(fileLoader) {
   init();
   _assetManager = AssetManager(_logicalDevice, fileLoader);
+  // Load data from disk.
+  std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
+  loadObj(_assetManager, "cube.obj", data);
+  const std::vector<VertexData> sceneData =
+      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
+  _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
   loadCubemap();
   createDescriptorSets();
-  loadObjects();
-  createOctreeScene();
   createPresentResources();
-  createMirrorCubemapResources();
+  createEnvMappingResources();
   createShadowResources();
   createGraphicsPipelines();
   createCommandBuffers();
   createSyncObjects();
+  loadObjects(sceneData);
+  createOctreeScene();
   setInput();
 }
 
@@ -216,17 +223,17 @@ void Application::setInput() {
       });
 }
 
-void Application::createMirrorCubemapResources() {
+void Application::createEnvMappingResources() {
   // First pass for rendering the environment map.
   const float samplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
 
-    _mirrorCubemapAttachments[0] =
+    _envMappingAttachments[0] =
         createCubemap(_logicalDevice, handle.getCommandBuffer(),
                       VK_IMAGE_ASPECT_COLOR_BIT, VK_FORMAT_R8G8B8A8_SRGB,
                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samplerAnisotropy);
-    _mirrorCubemapAttachments[1] = createCubemap(
+    _envMappingAttachments[1] = createCubemap(
         _logicalDevice, handle.getCommandBuffer(), VK_IMAGE_ASPECT_DEPTH_BIT,
         VK_FORMAT_D16_UNORM, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         samplerAnisotropy);
@@ -239,7 +246,7 @@ void Application::createMirrorCubemapResources() {
   attachmentLayout.addDepthAttachment(VK_FORMAT_D16_UNORM,
                                       VK_ATTACHMENT_STORE_OP_DONT_CARE);
 
-  _mirrorCubemapRenderPass =
+  _envMappingRenderPass =
       RenderpassBuilder(attachmentLayout)
           .withMultiView({0b111111}, {0b111111})
           .addDependency(VK_SUBPASS_EXTERNAL, 0,
@@ -254,8 +261,8 @@ void Application::createMirrorCubemapResources() {
           .addSubpass({0, 1})
           .build(_logicalDevice);
 
-  _mirrorCubemapFramebuffer = Framebuffer::createFromTextures(
-      _mirrorCubemapRenderPass, _mirrorCubemapAttachments);
+  _envMappingFramebuffer = Framebuffer::createFromTextures(
+      _envMappingRenderPass, _envMappingAttachments);
 
   const glm::vec3 pos = glm::vec3(0.0f, 2.0f, 0.0f);
   glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 50.0f);
@@ -285,24 +292,16 @@ void Application::createMirrorCubemapResources() {
       .lightProjView = _ubLight.projView,
       .lightPos = _ubLight.pos};
 
-  _mirrorCubemapUniformBuffer =
+  _envMappingUniformBuffer =
       Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform));
-  _mirrorCubemapUniformBuffer.copyData(faceTransform);
-  _mirrorCubemapHandle =
-      _bindlessWriter->storeBuffer(_mirrorCubemapUniformBuffer);
-  _mirrorCubemapTextureHandle =
-      _bindlessWriter->storeTexture(_mirrorCubemapAttachments[0]);
+  _envMappingUniformBuffer.copyData(faceTransform);
+  _envMappingHandle =
+      _bindlessWriter->storeBuffer(_envMappingUniformBuffer);
+  _envMappingTextureHandle =
+      _bindlessWriter->storeTexture(_envMappingAttachments[0]);
 }
 
 void Application::loadCubemap() {
-  _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
-  // TODO: temporal experiment
-  auto fileLoader = std::make_unique<StandardFileLoader>();
-  std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
-
-  const VertexData vertexDataCube = loadObj(_assetManager, "cube.obj", data);
-
-  {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
@@ -325,12 +324,9 @@ void Application::loadCubemap() {
 
     _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
     _indexBufferCubeType = vData.indexType;
-  }
 }
 
-void Application::loadObjects() {
-  const std::vector<VertexData> sceneData =
-      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
+void Application::loadObjects(std::span<const VertexData> sceneData) {
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
@@ -470,13 +466,13 @@ void Application::createGraphicsPipelines() {
       _pipelineManager.createPBRProgram(_renderPass),
       _pipelineManager.createSkyboxProgram(_renderPass),
       _pipelineManager.createShadowProgram(_shadowRenderPass),
-      _pipelineManager.createPbrEnvMappingProgram(_mirrorCubemapRenderPass)};
+      _pipelineManager.createPbrEnvMappingProgram(_envMappingRenderPass)};
   std::vector<Pipeline> pipelines =
       GraphicsPipelineBuilder::createPipelines(pipelineBuilders);
   _graphicsPipeline = std::move(pipelines[0]);
   _skyboxPipeline = std::move(pipelines[1]);
   _shadowPipeline = std::move(pipelines[2]);
-  _mirrorCubemapPipeline = std::move(pipelines[3]);
+  _envMappingPipeline = std::move(pipelines[3]);
 }
 
 void Application::createPresentResources() {
@@ -552,7 +548,7 @@ void Application::run() {
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     recordShadowCommandBuffer(handle.getCommandBuffer());
-    recordMirrorCommandBuffer(handle.getCommandBuffer());
+    recordEnvMappingCommandBuffer(handle.getCommandBuffer());
   }
   std::chrono::steady_clock::time_point previous;
 
@@ -840,7 +836,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     const PushConstantsSkybox pc = {
         .proj = _camera.getProjectionMatrix(),
         .view = _camera.getViewMatrix(),
-        .skyboxHandle = static_cast<uint32_t>(_mirrorCubemapTextureHandle)};
+        .skyboxHandle = static_cast<uint32_t>(_envMappingTextureHandle)};
     vkCmdPushConstants(commandBuffer, _skyboxPipeline.getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT |
                            VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -940,19 +936,19 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
   vkCmdEndRenderPass(commandBuffer);
 }
 
-void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
+void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
   const VkCommandBufferBeginInfo beginInfo = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
-  VkExtent2D extent = _mirrorCubemapAttachments[0].getVkExtent2D();
+  VkExtent2D extent = _envMappingAttachments[0].getVkExtent2D();
 
   std::span<const VkClearValue> clearValues =
-      _mirrorCubemapRenderPass.getAttachmentsLayout().getVkClearValues();
+      _envMappingRenderPass.getAttachmentsLayout().getVkClearValues();
 
   const VkRenderPassBeginInfo renderPassInfo = {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-      .renderPass = _mirrorCubemapRenderPass.getVkRenderPass(),
-      .framebuffer = _mirrorCubemapFramebuffer.getVkFramebuffer(),
+      .renderPass = _envMappingRenderPass.getVkRenderPass(),
+      .framebuffer = _envMappingFramebuffer.getVkFramebuffer(),
       .renderArea = {.offset = {0, 0}, .extent = extent},
       .clearValueCount = static_cast<uint32_t>(clearValues.size()),
       .pClearValues = clearValues.data()};
@@ -975,12 +971,12 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
       _bindlessDescriptorSet.getVkDescriptorSet()};
 
   vkCmdBindPipeline(commandBuffer,
-                    _mirrorCubemapPipeline.getVkPipelineBindPoint(),
-                    _mirrorCubemapPipeline.getVkPipeline());
+                    _envMappingPipeline.getVkPipelineBindPoint(),
+                    _envMappingPipeline.getVkPipeline());
 
   vkCmdBindDescriptorSets(commandBuffer,
-                          _mirrorCubemapPipeline.getVkPipelineBindPoint(),
-                          _mirrorCubemapPipeline.getVkPipelineLayout(), 0, 1,
+                          _envMappingPipeline.getVkPipelineBindPoint(),
+                          _envMappingPipeline.getVkPipelineLayout(), 0, 1,
                           descriptorSets, 0, nullptr);
 
   const VkDeviceSize offsets[] = {0};
@@ -995,14 +991,14 @@ void Application::recordMirrorCommandBuffer(VkCommandBuffer commandBuffer) {
 
     const PushConstantsPBR pc = {
         .model = transformComponent.model,
-        .uniformIndex = (uint32_t)_mirrorCubemapHandle,
+        .uniformIndex = (uint32_t)_envMappingHandle,
         .diffuse = (uint32_t)materialComponent.diffuse,
         .normal = (uint32_t)materialComponent.normal,
         .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
         .shadow = (uint32_t)_shadowHandle};
 
     vkCmdPushConstants(
-        commandBuffer, _mirrorCubemapPipeline.getVkPipelineLayout(),
+        commandBuffer, _envMappingPipeline.getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
