@@ -59,7 +59,7 @@ class Application {
   Renderpass _shadowRenderPass;
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
-  Pipeline _shadowPipeline;
+  Pipeline* _shadowPipeline;
   TextureHandle _shadowHandle;
 
   // Skybox.
@@ -67,26 +67,26 @@ class Application {
   Buffer _indexBufferCube;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
-  Pipeline _skyboxPipeline;
+  Pipeline* _skyboxPipeline;
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
   Renderpass _envMappingRenderPass;
   Framebuffer _envMappingFramebuffer;
-  Pipeline _envMappingPipeline;
+  Pipeline* _envMappingPipeline;
   Buffer _envMappingUniformBuffer;
   BufferHandle _envMappingHandle;
   std::array<Texture, 2> _envMappingAttachments;
   TextureHandle _envMappingTextureHandle;
   // Second pass.
-  Pipeline _phongEnvMappingPipeline;
+  Pipeline* _phongEnvMappingPipeline;
 
   // PBR objects.
   std::vector<Object> objects;
   std::shared_ptr<DescriptorPool> _descriptorPool;
   std::shared_ptr<DescriptorPool> _dynamicDescriptorPool;
-  Pipeline _graphicsPipeline;
+  Pipeline* _graphicsPipeline;
   UniformBufferCamera _ubCamera;
   UniformBufferLight _ubLight;
 

@@ -462,17 +462,10 @@ void Application::createDescriptorSets() {
 }
 
 void Application::createGraphicsPipelines() {
-  const GraphicsPipelineBuilder pipelineBuilders[] = {
-      _pipelineManager.createPBRProgram(_renderPass),
-      _pipelineManager.createSkyboxProgram(_renderPass),
-      _pipelineManager.createShadowProgram(_shadowRenderPass),
-      _pipelineManager.createPbrEnvMappingProgram(_envMappingRenderPass)};
-  std::vector<Pipeline> pipelines =
-      GraphicsPipelineBuilder::createPipelines(pipelineBuilders);
-  _graphicsPipeline = std::move(pipelines[0]);
-  _skyboxPipeline = std::move(pipelines[1]);
-  _shadowPipeline = std::move(pipelines[2]);
-  _envMappingPipeline = std::move(pipelines[3]);
+  _graphicsPipeline = _pipelineManager.getPipeline(_pipelineManager.createPBRProgram(_renderPass));
+  _skyboxPipeline = _pipelineManager.getPipeline(_pipelineManager.createSkyboxProgram(_renderPass));
+  _shadowPipeline = _pipelineManager.getPipeline(_pipelineManager.createShadowProgram(_shadowRenderPass));
+  _envMappingPipeline = _pipelineManager.getPipeline(_pipelineManager.createPbrEnvMappingProgram(_envMappingRenderPass));
 }
 
 void Application::createPresentResources() {
@@ -699,7 +692,7 @@ void Application::recordOctreeSecondaryCommandBuffer(
           .shadow = (uint32_t)_shadowHandle,
       };
 
-      vkCmdPushConstants(commandBuffer, _graphicsPipeline.getVkPipelineLayout(),
+      vkCmdPushConstants(commandBuffer, _graphicsPipeline->getVkPipelineLayout(),
                          VK_SHADER_STAGE_VERTEX_BIT |
                              VK_SHADER_STAGE_FRAGMENT_BIT,
                          0, sizeof(pc), &pc);
@@ -777,8 +770,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetViewport(commandBuffer, 0, 1, &framebuffer.getViewport());
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
-    vkCmdBindPipeline(commandBuffer, _graphicsPipeline.getVkPipelineBindPoint(),
-                      _graphicsPipeline.getVkPipeline());
+    vkCmdBindPipeline(commandBuffer, _graphicsPipeline->getVkPipelineBindPoint(),
+                      _graphicsPipeline->getVkPipeline());
 
     const OctreeNode *root = _octree->getRoot();
     const auto &planes = extractFrustumPlanes(_camera.getProjectionMatrix() *
@@ -794,8 +787,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         &offset, {_currentFrame});
 
     vkCmdBindDescriptorSets(commandBuffer,
-                            _graphicsPipeline.getVkPipelineBindPoint(),
-                            _graphicsPipeline.getVkPipelineLayout(), 0,
+                            _graphicsPipeline->getVkPipelineBindPoint(),
+                            _graphicsPipeline->getVkPipelineLayout(), 0,
                             static_cast<uint32_t>(std::size(descriptorSets)),
                             descriptorSets, 1, &offset);
 
@@ -822,8 +815,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
       vkCmdSetScissor(commandBuffer, 0, 1, &framebuffer.getScissor());
     }
 
-    vkCmdBindPipeline(commandBuffer, _skyboxPipeline.getVkPipelineBindPoint(),
-                      _skyboxPipeline.getVkPipeline());
+    vkCmdBindPipeline(commandBuffer, _skyboxPipeline->getVkPipelineBindPoint(),
+                      _skyboxPipeline->getVkPipeline());
 
     static constexpr VkDeviceSize offsets[] = {0};
 
@@ -837,7 +830,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         .proj = _camera.getProjectionMatrix(),
         .view = _camera.getViewMatrix(),
         .skyboxHandle = static_cast<uint32_t>(_envMappingTextureHandle)};
-    vkCmdPushConstants(commandBuffer, _skyboxPipeline.getVkPipelineLayout(),
+    vkCmdPushConstants(commandBuffer, _skyboxPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT |
                            VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
@@ -846,8 +839,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _bindlessDescriptorSet.getVkDescriptorSet();
 
     vkCmdBindDescriptorSets(commandBuffer,
-                            _skyboxPipeline.getVkPipelineBindPoint(),
-                            _skyboxPipeline.getVkPipelineLayout(), 0, 1,
+                            _skyboxPipeline->getVkPipelineBindPoint(),
+                            _skyboxPipeline->getVkPipelineLayout(), 0, 1,
                             &descriptorSet, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
@@ -904,8 +897,8 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
   const VkDeviceSize offsets[] = {0};
-  vkCmdBindPipeline(commandBuffer, _shadowPipeline.getVkPipelineBindPoint(),
-                    _shadowPipeline.getVkPipeline());
+  vkCmdBindPipeline(commandBuffer, _shadowPipeline->getVkPipelineBindPoint(),
+                    _shadowPipeline->getVkPipeline());
 
   PushConstantsShadow pc = {.lightProjView = _ubLight.projView};
 
@@ -917,7 +910,7 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
 
     pc.model = transformComponent.model;
 
-    vkCmdPushConstants(commandBuffer, _shadowPipeline.getVkPipelineLayout(),
+    vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
     VkBuffer vertexBuffer = meshComponent.vertexBufferPrimitive.getVkBuffer();
@@ -971,12 +964,12 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
       _bindlessDescriptorSet.getVkDescriptorSet()};
 
   vkCmdBindPipeline(commandBuffer,
-                    _envMappingPipeline.getVkPipelineBindPoint(),
-                    _envMappingPipeline.getVkPipeline());
+                    _envMappingPipeline->getVkPipelineBindPoint(),
+                    _envMappingPipeline->getVkPipeline());
 
   vkCmdBindDescriptorSets(commandBuffer,
-                          _envMappingPipeline.getVkPipelineBindPoint(),
-                          _envMappingPipeline.getVkPipelineLayout(), 0, 1,
+                          _envMappingPipeline->getVkPipelineBindPoint(),
+                          _envMappingPipeline->getVkPipelineLayout(), 0, 1,
                           descriptorSets, 0, nullptr);
 
   const VkDeviceSize offsets[] = {0};
@@ -998,7 +991,7 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         .shadow = (uint32_t)_shadowHandle};
 
     vkCmdPushConstants(
-        commandBuffer, _envMappingPipeline.getVkPipelineLayout(),
+        commandBuffer, _envMappingPipeline->getVkPipelineLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
