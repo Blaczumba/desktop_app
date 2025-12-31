@@ -149,5 +149,5 @@ private:
 
   void loadObjects(std::span<const VertexData> sceneData);
   void createOctreeScene();
-  void loadCubemap();
+  void loadCubemap(const VertexData& cubeData);
 };

@@ -149,11 +149,11 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
   _assetManager = AssetManager(_logicalDevice, fileLoader);
   // Load data from disk.
   std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
-  loadObj(_assetManager, "cube.obj", data);
+  const VertexData cubeData = loadObj(_assetManager, "cube.obj", data);
   const std::vector<VertexData> sceneData =
       LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
   _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
-  loadCubemap();
+  loadCubemap(cubeData);
   createDescriptorSets();
   createPresentResources();
   createEnvMappingResources();
@@ -301,7 +301,7 @@ void Application::createEnvMappingResources() {
       _bindlessWriter->storeTexture(_envMappingAttachments[0]);
 }
 
-void Application::loadCubemap() {
+void Application::loadCubemap(const VertexData& cubeData) {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
@@ -313,7 +313,7 @@ void Application::loadCubemap() {
                                    _physicalDevice->getMaxSamplerAnisotropy());
 
     const AssetManager::VertexData &vData =
-        _assetManager.getVertexData("cube.obj");
+        _assetManager.getVertexData(cubeData.vertexResourceID);
     _vertexBufferCube = Buffer::createVertexBuffer(
         _logicalDevice, vData.buffers.at("P").getSize());
 
@@ -379,7 +379,7 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
                              _textures[normalPath].first,
                              _textures[metallicRoughnessPath].first});
     const AssetManager::VertexData &vData =
-        _assetManager.getVertexData(sceneObject.vertexResource);
+        _assetManager.getVertexData(sceneObject.vertexResourceID);
     MeshComponent msh;
     msh.vertexBuffer = Buffer::createVertexBuffer(
         _logicalDevice, vData.buffers.at("PTNT").getSize());
