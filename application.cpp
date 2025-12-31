@@ -149,10 +149,10 @@ Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
   _assetManager = AssetManager(_logicalDevice, fileLoader);
   // Load data from disk.
   std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
-  const VertexData cubeData = loadObj(_assetManager, "cube.obj", data);
+  VertexData cubeData = loadObj(_assetManager, "cube.obj", data);
   const std::vector<VertexData> sceneData =
       LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
-  _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
+  cubeData.diffuseTexture = { _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"), TEXTURES_PATH "cubemap_yokohama_rgba.ktx"};
   loadCubemap(cubeData);
   createDescriptorSets();
   createPresentResources();
@@ -306,7 +306,7 @@ void Application::loadCubemap(const VertexData& cubeData) {
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
     const AssetManager::ImageData &imageData =
-        _assetManager.getImageData(TEXTURES_PATH "cubemap_yokohama_rgba.ktx");
+        _assetManager.getImageData(cubeData.diffuseTexture.ID);
 
     _textureCubemap = createSkybox(_logicalDevice, commandBuffer, imageData,
                                    VK_FORMAT_R8G8B8A8_UNORM,
@@ -334,10 +334,10 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
   for (const VertexData &sceneObject : sceneData) {
     const std::string diffusePath =
-        MODELS_PATH "sponza/" + sceneObject.diffuseTexture;
+        MODELS_PATH "sponza/" + sceneObject.diffuseTexture.path;
     if (!_textures.contains(diffusePath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(diffusePath);
+          _assetManager.getImageData(sceneObject.diffuseTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy);
@@ -347,10 +347,10 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
     }
 
     const std::string normalPath =
-        MODELS_PATH "sponza/" + sceneObject.normalTexture;
+        MODELS_PATH "sponza/" + sceneObject.normalTexture.path;
     if (!_textures.contains(normalPath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(normalPath);
+          _assetManager.getImageData(sceneObject.normalTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
@@ -360,10 +360,10 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
     }
 
     const std::string metallicRoughnessPath =
-        MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture;
+        MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture.path;
     if (!_textures.contains(metallicRoughnessPath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(metallicRoughnessPath);
+          _assetManager.getImageData(sceneObject.metallicRoughnessTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
