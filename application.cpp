@@ -140,19 +140,19 @@ Texture createTexture2D(const LogicalDevice &logicalDevice,
 
 } // namespace
 
-Application::Application(const std::shared_ptr<FileLoader> &fileLoader)
+Application::Application(std::unique_ptr<FileLoader>&& fileLoader)
     : _camera(PerspectiveProjection{glm::radians(45.0f), 1920.0f / 1080.f,
                                     0.01f, 50.0f},
               glm::vec3(0.0f), 5.5f, 0.01f),
-      _pipelineManager(fileLoader) {
+      _pipelineManager(PipelineManager::create(*fileLoader)), _fileLoader(std::move(fileLoader)) {
   init();
-  _assetManager = AssetManager(_logicalDevice, fileLoader);
+  _assetManager = AssetManager::create(_logicalDevice, *_fileLoader);
   // Load data from disk.
-  std::string data = fileLoader->loadFileToString(MODELS_PATH "cube.obj");
-  VertexData cubeData = loadObj(_assetManager, "cube.obj", data);
+  std::string data = _fileLoader->loadFileToString(MODELS_PATH "cube.obj");
+  VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
   const std::vector<VertexData> sceneData =
-      LoadGltfFromFile(_assetManager, MODELS_PATH "sponza/scene.gltf");
-  cubeData.diffuseTexture = { _assetManager.loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"), TEXTURES_PATH "cubemap_yokohama_rgba.ktx"};
+      LoadGltfFromFile(*_assetManager, MODELS_PATH "sponza/scene.gltf");
+  cubeData.diffuseTexture = { _assetManager->loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"), TEXTURES_PATH "cubemap_yokohama_rgba.ktx"};
   loadCubemap(cubeData);
   createDescriptorSets();
   createPresentResources();
@@ -306,14 +306,14 @@ void Application::loadCubemap(const VertexData& cubeData) {
     const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
     const AssetManager::ImageData &imageData =
-        _assetManager.getImageData(cubeData.diffuseTexture.ID);
+        _assetManager->getImageData(cubeData.diffuseTexture.ID);
 
     _textureCubemap = createSkybox(_logicalDevice, commandBuffer, imageData,
                                    VK_FORMAT_R8G8B8A8_UNORM,
                                    _physicalDevice->getMaxSamplerAnisotropy());
 
     const AssetManager::VertexData &vData =
-        _assetManager.getVertexData(cubeData.vertexResourceID);
+        _assetManager->getVertexData(cubeData.vertexResourceID);
     _vertexBufferCube = Buffer::createVertexBuffer(
         _logicalDevice, vData.buffers.at("P").getSize());
 
@@ -337,7 +337,7 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
         MODELS_PATH "sponza/" + sceneObject.diffuseTexture.path;
     if (!_textures.contains(diffusePath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(sceneObject.diffuseTexture.ID);
+          _assetManager->getImageData(sceneObject.diffuseTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy);
@@ -350,7 +350,7 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
         MODELS_PATH "sponza/" + sceneObject.normalTexture.path;
     if (!_textures.contains(normalPath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(sceneObject.normalTexture.ID);
+          _assetManager->getImageData(sceneObject.normalTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
@@ -363,7 +363,7 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
         MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture.path;
     if (!_textures.contains(metallicRoughnessPath)) {
       const AssetManager::ImageData &imgData =
-          _assetManager.getImageData(sceneObject.metallicRoughnessTexture.ID);
+          _assetManager->getImageData(sceneObject.metallicRoughnessTexture.ID);
       Texture texture =
           createTexture2D(_logicalDevice, commandBuffer, imgData,
                           VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
@@ -379,7 +379,7 @@ void Application::loadObjects(std::span<const VertexData> sceneData) {
                              _textures[normalPath].first,
                              _textures[metallicRoughnessPath].first});
     const AssetManager::VertexData &vData =
-        _assetManager.getVertexData(sceneObject.vertexResourceID);
+        _assetManager->getVertexData(sceneObject.vertexResourceID);
     MeshComponent msh;
     msh.vertexBuffer = Buffer::createVertexBuffer(
         _logicalDevice, vData.buffers.at("PTNT").getSize());
@@ -431,11 +431,11 @@ void Application::createDescriptorSets() {
   _dynamicDescriptorPool = DescriptorPool::create(_logicalDevice, 1);
 
   const VkDescriptorSetLayout bindlesslayout =
-      _pipelineManager.getOrCreateBindlessLayout(_logicalDevice);
+      _pipelineManager->getOrCreateBindlessLayout(_logicalDevice);
   _bindlessDescriptorSet = _descriptorPool->createDesriptorSet(bindlesslayout);
 
   const VkDescriptorSetLayout cameraLayout =
-      _pipelineManager.getOrCreateCameraLayout(_logicalDevice);
+      _pipelineManager->getOrCreateCameraLayout(_logicalDevice);
   _dynamicDescriptorSet =
       _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
   _bindlessWriter =
@@ -462,10 +462,10 @@ void Application::createDescriptorSets() {
 }
 
 void Application::createGraphicsPipelines() {
-  _graphicsPipeline = _pipelineManager.getPipeline(_pipelineManager.createPBRProgram(_renderPass));
-  _skyboxPipeline = _pipelineManager.getPipeline(_pipelineManager.createSkyboxProgram(_renderPass));
-  _shadowPipeline = _pipelineManager.getPipeline(_pipelineManager.createShadowProgram(_shadowRenderPass));
-  _envMappingPipeline = _pipelineManager.getPipeline(_pipelineManager.createPbrEnvMappingProgram(_envMappingRenderPass));
+  _graphicsPipeline = _pipelineManager->getPipeline(_pipelineManager->createPBRProgram(_renderPass));
+  _skyboxPipeline = _pipelineManager->getPipeline(_pipelineManager->createSkyboxProgram(_renderPass));
+  _shadowPipeline = _pipelineManager->getPipeline(_pipelineManager->createShadowProgram(_shadowRenderPass));
+  _envMappingPipeline = _pipelineManager->getPipeline(_pipelineManager->createPbrEnvMappingProgram(_envMappingRenderPass));
 }
 
 void Application::createPresentResources() {

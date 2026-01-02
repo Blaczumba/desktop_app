@@ -44,13 +44,13 @@ class Application {
   Swapchain _swapchain;
   std::unique_ptr<CommandPool> _singleTimeCommandPool;
 
-  PipelineManager _pipelineManager;
+  std::unique_ptr<PipelineManager> _pipelineManager;
 
   std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
-  AssetManager _assetManager;
+  std::unique_ptr<AssetManager> _assetManager;
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;
@@ -116,8 +116,10 @@ class Application {
 
   uint32_t _currentFrame = 0;
 
+  std::unique_ptr<FileLoader> _fileLoader;
+
 public:
-  Application(const std::shared_ptr<FileLoader> &fileLoader);
+  Application(std::unique_ptr<FileLoader>&& fileLoader);
   ~Application();
 
   Application(const Application &) = delete;
