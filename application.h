@@ -26,6 +26,7 @@
 #include "bejzak_engine/vulkan/wrapper/render_pass/render_pass.h"
 #include "bejzak_engine/vulkan/wrapper/surface/surface.h"
 #include "bejzak_engine/vulkan/wrapper/swapchain/swapchain.h"
+#include "bejzak_engine/common/model_loader/model_loader.h"
 
 #include <unordered_map>
 
@@ -43,13 +44,13 @@ class Application {
   Swapchain _swapchain;
   std::unique_ptr<CommandPool> _singleTimeCommandPool;
 
-  PipelineManager _pipelineManager;
+  std::unique_ptr<PipelineManager> _pipelineManager;
 
   std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
-  AssetManager _assetManager;
+  std::unique_ptr<AssetManager> _assetManager;
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;
@@ -58,34 +59,35 @@ class Application {
   Renderpass _shadowRenderPass;
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
-  Pipeline _shadowPipeline;
+  Pipeline* _shadowPipeline;
   TextureHandle _shadowHandle;
 
   // Skybox.
   Buffer _vertexBufferCube;
+  Buffer _vertexBufferCubeNormals;
   Buffer _indexBufferCube;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
-  Pipeline _skyboxPipeline;
+  Pipeline* _skyboxPipeline;
   TextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
-  Renderpass _mirrorCubemapRenderPass;
-  Framebuffer _mirrorCubemapFramebuffer;
-  Pipeline _mirrorCubemapPipeline;
-  Buffer _mirrorCubemapUniformBuffer;
-  BufferHandle _mirrorCubemapHandle;
-  std::array<Texture, 2> _mirrorCubemapAttachments;
-  TextureHandle _mirrorCubemapTextureHandle;
+  Renderpass _envMappingRenderPass;
+  Framebuffer _envMappingFramebuffer;
+  Pipeline* _envMappingPipeline;
+  Buffer _envMappingUniformBuffer;
+  BufferHandle _envMappingHandle;
+  std::array<Texture, 2> _envMappingAttachments;
+  TextureHandle _envMappingTextureHandle;
   // Second pass.
-  // std::unique_ptr<GraphicsPipeline> _envPhongPipeline;
+  Pipeline* _phongEnvMappingPipeline;
 
   // PBR objects.
   std::vector<Object> objects;
   std::shared_ptr<DescriptorPool> _descriptorPool;
   std::shared_ptr<DescriptorPool> _dynamicDescriptorPool;
-  Pipeline _graphicsPipeline;
+  Pipeline* _graphicsPipeline;
   UniformBufferCamera _ubCamera;
   UniformBufferLight _ubLight;
 
@@ -115,8 +117,10 @@ class Application {
 
   uint32_t _currentFrame = 0;
 
+  std::unique_ptr<FileLoader> _fileLoader;
+
 public:
-  Application(const std::shared_ptr<FileLoader> &fileLoader);
+  Application(std::unique_ptr<FileLoader>&& fileLoader);
   ~Application();
 
   Application(const Application &) = delete;
@@ -137,16 +141,16 @@ private:
                                           const OctreeNode *node,
                                           std::span<const glm::vec4> planes);
   void recordShadowCommandBuffer(VkCommandBuffer commandBuffer);
-  void recordMirrorCommandBuffer(VkCommandBuffer commandBuffer);
+  void recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer);
   void recreateSwapChain();
-  void createMirrorCubemapResources();
 
   void createDescriptorSets();
   void createGraphicsPipelines();
   void createPresentResources();
   void createShadowResources();
+  void createEnvMappingResources();
 
-  void loadObjects();
+  void loadObjects(std::span<const VertexData> sceneData);
   void createOctreeScene();
-  void loadCubemap();
+  void loadCubemap(const VertexData& cubeData);
 };
