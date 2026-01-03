@@ -82,7 +82,7 @@ Texture createCubemap(const LogicalDevice &logicalDevice,
   Texture texture =
       TextureBuilder()
           .withAspect(aspect)
-          .withExtent(1024 * 2, 1024 * 2)
+          .withExtent(1024 * 4, 1024 * 4)
           .withFormat(format)
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | additionalUsage)
           .withLayerCount(6)
@@ -316,8 +316,11 @@ void Application::loadCubemap(const VertexData& cubeData) {
         _assetManager->getVertexData(cubeData.vertexResourceID);
     _vertexBufferCube = Buffer::createVertexBuffer(
         _logicalDevice, vData.buffers.at("P").getSize());
-
     _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
+
+    _vertexBufferCubeNormals = Buffer::createVertexBuffer(
+        _logicalDevice, vData.buffers.at("PN").getSize());
+    _vertexBufferCubeNormals.copyBuffer(commandBuffer, vData.buffers.at("PN"));
 
     _indexBufferCube =
         Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
@@ -464,6 +467,7 @@ void Application::createDescriptorSets() {
 void Application::createGraphicsPipelines() {
   _graphicsPipeline = _pipelineManager->getPipeline(_pipelineManager->createPBRProgram(_renderPass));
   _skyboxPipeline = _pipelineManager->getPipeline(_pipelineManager->createSkyboxProgram(_renderPass));
+  _phongEnvMappingPipeline = _pipelineManager->getPipeline(_pipelineManager->createEnvMappingProgram(_renderPass));
   _shadowPipeline = _pipelineManager->getPipeline(_pipelineManager->createShadowProgram(_shadowRenderPass));
   _envMappingPipeline = _pipelineManager->getPipeline(_pipelineManager->createPbrEnvMappingProgram(_envMappingRenderPass));
 }
@@ -835,18 +839,57 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
                            VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
 
-    const VkDescriptorSet descriptorSet =
-        _bindlessDescriptorSet.getVkDescriptorSet();
+    const VkDescriptorSet descriptorSets[] = {
+        _bindlessDescriptorSet.getVkDescriptorSet(),
+        _dynamicDescriptorSet.getVkDescriptorSet() };
 
     vkCmdBindDescriptorSets(commandBuffer,
                             _skyboxPipeline->getVkPipelineBindPoint(),
                             _skyboxPipeline->getVkPipelineLayout(), 0, 1,
-                            &descriptorSet, 0, nullptr);
+                            descriptorSets, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
                      _indexBufferCube.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
+
+    
+
+    // Env mapping
+    vkCmdBindPipeline(commandBuffer, _phongEnvMappingPipeline->getVkPipelineBindPoint(),
+        _phongEnvMappingPipeline->getVkPipeline());
+
+    uint32_t offset;
+
+    _dynamicDescriptorSetWriter.getDynamicBufferSizesWithOffsets(
+        &offset, { _currentFrame });
+
+    vkCmdBindDescriptorSets(commandBuffer,
+        _phongEnvMappingPipeline->getVkPipelineBindPoint(),
+        _phongEnvMappingPipeline->getVkPipelineLayout(), 0, std::size(descriptorSets),
+        descriptorSets, 1, &offset);
+
+    const PushConstantsModelDescriptorHandles envMapPc = {
+        .model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, 0.0f)),
+        .descriptorHandles = {
+            static_cast<uint32_t>(_envMappingHandle),
+            static_cast<uint32_t>(_lightHandle)} };
+
+    vkCmdPushConstants(commandBuffer, _phongEnvMappingPipeline->getVkPipelineLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT |
+        VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(envMapPc), &envMapPc);
+
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1,
+        &_vertexBufferCubeNormals.getVkBuffer(), offsets);
+
+    vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
+        _indexBufferCubeType);
+
+    vkCmdDrawIndexed(commandBuffer,
+        _indexBufferCube.getSize() /
+        getIndexSize(_indexBufferCubeType),
+        1, 0, 0, 0);
 
     CHECK_VKCMD(vkEndCommandBuffer(commandBuffer),
                 "Failed to vkEndCommandBuffer.");

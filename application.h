@@ -64,6 +64,7 @@ class Application {
 
   // Skybox.
   Buffer _vertexBufferCube;
+  Buffer _vertexBufferCubeNormals;
   Buffer _indexBufferCube;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
