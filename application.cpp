@@ -683,14 +683,14 @@ void Application::recordOctreeSecondaryCommandBuffer(
       const auto &transformComponent =
           _registry.getComponent<TransformComponent>(object->getEntity());
 
-      const PushConstantsPBR pc = {
-          .model = transformComponent.model,
-          .uniformIndex = (uint32_t)_lightHandle,
-          .diffuse = (uint32_t)materialComponent.diffuse,
-          .normal = (uint32_t)materialComponent.normal,
-          .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
-          .shadow = (uint32_t)_shadowHandle,
-      };
+      const PushConstantsModelDescriptorHandles pc = {
+        .model = transformComponent.model,
+        .descriptorHandles = {
+            static_cast<uint32_t>(_lightHandle),
+            static_cast<uint32_t>(materialComponent.diffuse),
+            static_cast<uint32_t>(materialComponent.normal),
+            static_cast<uint32_t>(materialComponent.metallicRoughness),
+            static_cast<uint32_t>(_shadowHandle)} };
 
       vkCmdPushConstants(commandBuffer, _graphicsPipeline->getVkPipelineLayout(),
                          VK_SHADER_STAGE_VERTEX_BIT |
@@ -982,13 +982,14 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
     const auto &materialComponent =
         _registry.getComponent<MaterialComponent>(object.getEntity());
 
-    const PushConstantsPBR pc = {
+    const PushConstantsModelDescriptorHandles pc = {
         .model = transformComponent.model,
-        .uniformIndex = (uint32_t)_envMappingHandle,
-        .diffuse = (uint32_t)materialComponent.diffuse,
-        .normal = (uint32_t)materialComponent.normal,
-        .metallicRoughness = (uint32_t)materialComponent.metallicRoughness,
-        .shadow = (uint32_t)_shadowHandle};
+        .descriptorHandles = {
+            static_cast<uint32_t>(_envMappingHandle),
+            static_cast<uint32_t>(materialComponent.diffuse),
+            static_cast<uint32_t>(materialComponent.normal),
+            static_cast<uint32_t>(materialComponent.metallicRoughness),
+            static_cast<uint32_t>(_shadowHandle)}};
 
     vkCmdPushConstants(
         commandBuffer, _envMappingPipeline->getVkPipelineLayout(),
