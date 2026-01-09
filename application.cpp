@@ -419,7 +419,7 @@ void Application::createDescriptorSets() {
   _dynamicDescriptorSet =
       _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
   _bindlessWriter =
-      std::make_unique<BindlessDescriptorSetWriter>(_bindlessDescriptorSet);
+      BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
   _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
 
   _dynamicDescriptorSetWriter.storeDynamicBuffer(_dynamicUniformBuffersCamera,
@@ -672,11 +672,11 @@ void Application::recordOctreeSecondaryCommandBuffer(
       const PushConstantsModelDescriptorHandles pc = {
           .model = transformComponent.model,
           .descriptorHandles = {
-              static_cast<uint16_t>(_lightHandle),
-              static_cast<uint16_t>(materialComponent.diffuse),
-              static_cast<uint16_t>(materialComponent.normal),
-              static_cast<uint16_t>(materialComponent.metallicRoughness),
-              static_cast<uint16_t>(_shadowHandle)}};
+              static_cast<uint16_t>(*_lightHandle),
+              static_cast<uint16_t>(*materialComponent.diffuse),
+              static_cast<uint16_t>(*materialComponent.normal),
+              static_cast<uint16_t>(*materialComponent.metallicRoughness),
+              static_cast<uint16_t>(*_shadowHandle)}};
 
       vkCmdPushConstants(
           commandBuffer, _graphicsPipeline->getVkPipelineLayout(),
@@ -816,7 +816,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     const PushConstantsSkybox pc = {.proj = _camera.getProjectionMatrix(),
                                     .view = _camera.getViewMatrix(),
                                     .skyboxHandle =
-                                        static_cast<uint32_t>(_skyboxHandle)};
+                                        static_cast<uint32_t>(*_skyboxHandle)};
     vkCmdPushConstants(commandBuffer, _skyboxPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT |
                            VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -854,8 +854,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     const PushConstantsModelDescriptorHandles envMapPc = {
         .model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, 0.0f)) *
                  glm::scale(glm::mat4(1.0f), glm::vec3(0.75f, 0.75f, 0.75f)),
-        .descriptorHandles = {static_cast<uint16_t>(_envMappingHandle),
-                              static_cast<uint16_t>(_lightHandle)}};
+        .descriptorHandles = {static_cast<uint16_t>(*_envMappingHandle),
+                              static_cast<uint16_t>(*_lightHandle)}};
 
     vkCmdPushConstants(
         commandBuffer, _phongEnvMappingPipeline->getVkPipelineLayout(),
@@ -1010,11 +1010,11 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
     const PushConstantsModelDescriptorHandles pc = {
         .model = transformComponent.model,
         .descriptorHandles = {
-            static_cast<uint16_t>(_envMappingHandle),
-            static_cast<uint16_t>(materialComponent.diffuse),
-            static_cast<uint16_t>(materialComponent.normal),
-            static_cast<uint16_t>(materialComponent.metallicRoughness),
-            static_cast<uint16_t>(_shadowHandle)}};
+            static_cast<uint16_t>(*_envMappingHandle),
+            static_cast<uint16_t>(*materialComponent.diffuse),
+            static_cast<uint16_t>(*materialComponent.normal),
+            static_cast<uint16_t>(*materialComponent.metallicRoughness),
+            static_cast<uint16_t>(*_shadowHandle)}};
 
     vkCmdPushConstants(
         commandBuffer, _envMappingPipeline->getVkPipelineLayout(),

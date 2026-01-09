@@ -46,7 +46,7 @@ class Application {
 
   std::unique_ptr<PipelineManager> _pipelineManager;
 
-  std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
+  std::unordered_map<std::string, std::pair<BindlessTextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
@@ -60,7 +60,7 @@ class Application {
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
   Pipeline *_shadowPipeline;
-  TextureHandle _shadowHandle;
+  BindlessTextureHandle _shadowHandle;
 
   // Skybox.
   Buffer _vertexBufferCube;
@@ -69,7 +69,7 @@ class Application {
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
   Pipeline *_skyboxPipeline;
-  TextureHandle _skyboxHandle;
+  BindlessTextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
@@ -77,9 +77,9 @@ class Application {
   Framebuffer _envMappingFramebuffer;
   Pipeline *_envMappingPipeline;
   Buffer _envMappingUniformBuffer;
-  BufferHandle _envMappingHandle;
+  BindlessBufferHandle _envMappingHandle;
   std::array<Texture, 2> _envMappingAttachments;
-  TextureHandle _envMappingTextureHandle;
+  BindlessTextureHandle _envMappingTextureHandle;
   // Second pass.
   Pipeline *_phongEnvMappingPipeline;
 
@@ -96,11 +96,11 @@ class Application {
   DescriptorSet _dynamicDescriptorSet;
 
   std::unique_ptr<BindlessDescriptorSetWriter>
-      _bindlessWriter; // Does not have to be unique_ptr
+      _bindlessWriter;
 
   DescriptorSet _bindlessDescriptorSet;
   Buffer _lightBuffer;
-  BufferHandle _lightHandle;
+  BindlessBufferHandle _lightHandle;
 
   Camera _camera;
 
