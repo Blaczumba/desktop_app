@@ -355,9 +355,9 @@ void Application::loadObjects(
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
-        e, MaterialComponent{_textures[diffusePath].first,
-                             _textures[normalPath].first,
-                             _textures[metallicRoughnessPath].first});
+        e, MaterialComponent{*_textures[diffusePath].first,
+                             *_textures[normalPath].first,
+                             *_textures[metallicRoughnessPath].first});
     const AssetManager::VertexData &vData =
         _assetManager->getVertexData(sceneObject.vertexResourceID);
     MeshComponent msh;
@@ -407,7 +407,7 @@ void Application::createDescriptorSets() {
       Buffer::createUniformBuffer(_logicalDevice, MAX_FRAMES_IN_FLIGHT * size);
 
   _descriptorPool = DescriptorPool::create(
-      _logicalDevice, 150, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+      _logicalDevice, 1, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
   _dynamicDescriptorPool = DescriptorPool::create(_logicalDevice, 1);
 
   const VkDescriptorSetLayout bindlesslayout =
@@ -634,7 +634,6 @@ void Application::updateUniformBuffer(uint32_t currentFrame) {
 
 void Application::createCommandBuffers() {
   for (int i = 0; i <= MAX_THREADS_IN_POOL; i++) {
-
     _commandPools[i] = CommandPool::create(
         _logicalDevice, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
   }
@@ -669,14 +668,14 @@ void Application::recordOctreeSecondaryCommandBuffer(
       const auto &transformComponent =
           _registry.getComponent<TransformComponent>(object->getEntity());
 
-      const PushConstantsModelDescriptorHandles pc = {
+      const PushConstantsModelDescriptorHandles32Bit pc = {
           .model = transformComponent.model,
           .descriptorHandles = {
-              static_cast<uint16_t>(*_lightHandle),
-              static_cast<uint16_t>(*materialComponent.diffuse),
-              static_cast<uint16_t>(*materialComponent.normal),
-              static_cast<uint16_t>(*materialComponent.metallicRoughness),
-              static_cast<uint16_t>(*_shadowHandle)}};
+              static_cast<uint32_t>(*_lightHandle),
+              static_cast<uint32_t>(materialComponent.diffuse),
+              static_cast<uint32_t>(materialComponent.normal),
+              static_cast<uint32_t>(materialComponent.metallicRoughness),
+              static_cast<uint32_t>(*_shadowHandle)}};
 
       vkCmdPushConstants(
           commandBuffer, _graphicsPipeline->getVkPipelineLayout(),
@@ -851,11 +850,11 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         _phongEnvMappingPipeline->getVkPipelineLayout(), 0,
         std::size(descriptorSets), descriptorSets, 1, &offset);
 
-    const PushConstantsModelDescriptorHandles envMapPc = {
+    const PushConstantsModelDescriptorHandles32Bit envMapPc = {
         .model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, 0.0f)) *
                  glm::scale(glm::mat4(1.0f), glm::vec3(0.75f, 0.75f, 0.75f)),
-        .descriptorHandles = {static_cast<uint16_t>(*_envMappingHandle),
-                              static_cast<uint16_t>(*_lightHandle)}};
+        .descriptorHandles = {static_cast<uint32_t>(*_envMappingHandle),
+                              static_cast<uint32_t>(*_lightHandle)}};
 
     vkCmdPushConstants(
         commandBuffer, _phongEnvMappingPipeline->getVkPipelineLayout(),
@@ -1007,14 +1006,14 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
     const auto &materialComponent =
         _registry.getComponent<MaterialComponent>(object.getEntity());
 
-    const PushConstantsModelDescriptorHandles pc = {
+    const PushConstantsModelDescriptorHandles32Bit pc = {
         .model = transformComponent.model,
         .descriptorHandles = {
-            static_cast<uint16_t>(*_envMappingHandle),
-            static_cast<uint16_t>(*materialComponent.diffuse),
-            static_cast<uint16_t>(*materialComponent.normal),
-            static_cast<uint16_t>(*materialComponent.metallicRoughness),
-            static_cast<uint16_t>(*_shadowHandle)}};
+            static_cast<uint32_t>(*_envMappingHandle),
+            static_cast<uint32_t>(materialComponent.diffuse),
+            static_cast<uint32_t>(materialComponent.normal),
+            static_cast<uint32_t>(materialComponent.metallicRoughness),
+            static_cast<uint32_t>(*_shadowHandle)}};
 
     vkCmdPushConstants(
         commandBuffer, _envMappingPipeline->getVkPipelineLayout(),
