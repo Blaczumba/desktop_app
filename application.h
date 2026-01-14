@@ -4,6 +4,7 @@
 #include "bejzak_engine/common/camera/projection.h"
 #include "bejzak_engine/common/entity_component_system/system/movement_system.h"
 #include "bejzak_engine/common/input_manager/mouse_keyboard_manager.h"
+#include "bejzak_engine/common/model_loader/model_loader.h"
 #include "bejzak_engine/common/object/object.h"
 #include "bejzak_engine/common/scene/octree.h"
 #include "bejzak_engine/common/util/primitives.h"
@@ -26,7 +27,6 @@
 #include "bejzak_engine/vulkan/wrapper/render_pass/render_pass.h"
 #include "bejzak_engine/vulkan/wrapper/surface/surface.h"
 #include "bejzak_engine/vulkan/wrapper/swapchain/swapchain.h"
-#include "bejzak_engine/common/model_loader/model_loader.h"
 
 #include <unordered_map>
 
@@ -46,7 +46,7 @@ class Application {
 
   std::unique_ptr<PipelineManager> _pipelineManager;
 
-  std::unordered_map<std::string, std::pair<TextureHandle, Texture>> _textures;
+  std::unordered_map<std::string, std::pair<BindlessTextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
@@ -59,8 +59,8 @@ class Application {
   Renderpass _shadowRenderPass;
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
-  Pipeline* _shadowPipeline;
-  TextureHandle _shadowHandle;
+  Pipeline *_shadowPipeline;
+  BindlessTextureHandle _shadowHandle;
 
   // Skybox.
   Buffer _vertexBufferCube;
@@ -68,26 +68,26 @@ class Application {
   Buffer _indexBufferCube;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
-  Pipeline* _skyboxPipeline;
-  TextureHandle _skyboxHandle;
+  Pipeline *_skyboxPipeline;
+  BindlessTextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
   Renderpass _envMappingRenderPass;
   Framebuffer _envMappingFramebuffer;
-  Pipeline* _envMappingPipeline;
+  Pipeline *_envMappingPipeline;
   Buffer _envMappingUniformBuffer;
-  BufferHandle _envMappingHandle;
+  BindlessBufferHandle _envMappingHandle;
   std::array<Texture, 2> _envMappingAttachments;
-  TextureHandle _envMappingTextureHandle;
+  BindlessTextureHandle _envMappingTextureHandle;
   // Second pass.
-  Pipeline* _phongEnvMappingPipeline;
+  Pipeline *_phongEnvMappingPipeline;
 
   // PBR objects.
   std::vector<Object> objects;
   std::shared_ptr<DescriptorPool> _descriptorPool;
   std::shared_ptr<DescriptorPool> _dynamicDescriptorPool;
-  Pipeline* _graphicsPipeline;
+  Pipeline *_graphicsPipeline;
   UniformBufferCamera _ubCamera;
   UniformBufferLight _ubLight;
 
@@ -96,11 +96,11 @@ class Application {
   DescriptorSet _dynamicDescriptorSet;
 
   std::unique_ptr<BindlessDescriptorSetWriter>
-      _bindlessWriter; // Does not have to be unique_ptr
+      _bindlessWriter;
 
   DescriptorSet _bindlessDescriptorSet;
   Buffer _lightBuffer;
-  BufferHandle _lightHandle;
+  BindlessBufferHandle _lightHandle;
 
   Camera _camera;
 
@@ -120,7 +120,7 @@ class Application {
   std::unique_ptr<FileLoader> _fileLoader;
 
 public:
-  Application(std::unique_ptr<FileLoader>&& fileLoader);
+  Application(std::unique_ptr<FileLoader> &&fileLoader);
   ~Application();
 
   Application(const Application &) = delete;
@@ -150,7 +150,7 @@ private:
   void createShadowResources();
   void createEnvMappingResources();
 
-  void loadObjects(std::span<const VertexData> sceneData);
+  void loadObjects(std::span<const VertexData<AssetManager>> sceneData);
   void createOctreeScene();
-  void loadCubemap(const VertexData& cubeData);
+  void loadCubemap(const VertexData<AssetManager> &cubeData);
 };
