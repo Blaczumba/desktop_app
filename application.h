@@ -10,6 +10,7 @@
 #include "bejzak_engine/common/util/primitives.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
+#include "bejzak_engine/vulkan/resource_manager/gpu_buffer_manager.h"
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
@@ -46,11 +47,11 @@ class Application {
 
   std::unique_ptr<PipelineManager> _pipelineManager;
 
-  std::unordered_map<std::string, std::pair<BindlessTextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
   std::unique_ptr<AssetManager> _assetManager;
+  std::unique_ptr<GpuBufferManager> _gpuBufferManager;
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;
@@ -95,8 +96,7 @@ class Application {
   Buffer _dynamicUniformBuffersCamera;
   DescriptorSet _dynamicDescriptorSet;
 
-  std::unique_ptr<BindlessDescriptorSetWriter>
-      _bindlessWriter;
+  std::unique_ptr<BindlessDescriptorSetWriter> _bindlessWriter;
 
   DescriptorSet _bindlessDescriptorSet;
   Buffer _lightBuffer;
@@ -151,6 +151,14 @@ private:
   void createEnvMappingResources();
 
   void loadObjects(std::span<const VertexData<AssetManager>> sceneData);
+  std::tuple<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>
+  getOrLoadTexture(
+      std::unordered_map<AssetManager::ImageResourceMapIndex,
+                         std::pair<BindlessTextureHandle,
+                                   GpuBufferManager::GpuTextureMapIndex>>
+          &textureCache,
+      AssetManager::ImageResourceMapIndex textureID, VkFormat format,
+      VkCommandBuffer commandBuffer, float maxSamplerAnisotropy);
   void createOctreeScene();
   void loadCubemap(const VertexData<AssetManager> &cubeData);
 };

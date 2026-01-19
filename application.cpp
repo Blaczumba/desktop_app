@@ -122,6 +122,7 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
       _fileLoader(std::move(fileLoader)) {
   init();
   _assetManager = AssetManager::create(_logicalDevice, *_fileLoader);
+  _gpuBufferManager = GpuBufferManager::create();
   // Load data from disk.
   std::string data = _fileLoader->loadFileToString(MODELS_PATH "cube.obj");
   VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
@@ -139,6 +140,7 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
   createCommandBuffers();
   createSyncObjects();
   loadObjects(sceneData);
+  _assetManager.reset(); // Clear the CPU cache.
   createOctreeScene();
   setInput();
 }
@@ -310,54 +312,32 @@ void Application::loadObjects(
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
+  std::unordered_map<
+      AssetManager::ImageResourceMapIndex,
+      std::pair<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>>
+      textureCache;
+  textureCache.reserve(sceneData.size());
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
   for (const VertexData<AssetManager> &sceneObject : sceneData) {
-    const std::string diffusePath =
-        MODELS_PATH "sponza/" + sceneObject.diffuseTexture.path;
-    if (!_textures.contains(diffusePath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.diffuseTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy);
-      _textures.emplace(diffusePath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+    const auto [diffuseHandle, diffuseTextureIndex] = getOrLoadTexture(
+        textureCache, sceneObject.diffuseTexture.ID, VK_FORMAT_R8G8B8A8_SRGB,
+        commandBuffer, maxSamplerAnisotropy);
 
-    const std::string normalPath =
-        MODELS_PATH "sponza/" + sceneObject.normalTexture.path;
-    if (!_textures.contains(normalPath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.normalTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
-      _textures.emplace(normalPath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+    const auto [normalHandle, normalTextureIndex] = getOrLoadTexture(
+        textureCache, sceneObject.normalTexture.ID, VK_FORMAT_R8G8B8A8_UNORM,
+        commandBuffer, maxSamplerAnisotropy);
 
-    const std::string metallicRoughnessPath =
-        MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture.path;
-    if (!_textures.contains(metallicRoughnessPath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.metallicRoughnessTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
-      _textures.emplace(metallicRoughnessPath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+    const auto [metallicRoughnessHandle, metallicRoughnessTextureIndex] =
+        getOrLoadTexture(textureCache, sceneObject.metallicRoughnessTexture.ID,
+                         VK_FORMAT_R8G8B8A8_UNORM, commandBuffer,
+                         maxSamplerAnisotropy);
 
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
-        e, MaterialComponent{*_textures[diffusePath].first,
-                             *_textures[normalPath].first,
-                             *_textures[metallicRoughnessPath].first});
+        e, MaterialComponent{*diffuseHandle, *normalHandle,
+                             *metallicRoughnessHandle});
     const AssetManager::VertexData &vData =
         _assetManager->getVertexData(sceneObject.vertexResourceID);
     MeshComponent msh;
@@ -381,6 +361,35 @@ void Application::loadObjects(
     trsf.model = sceneObject.model;
     _registry.addComponent<TransformComponent>(e, std::move(trsf));
   }
+}
+
+std::tuple<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>
+Application::getOrLoadTexture(
+    std::unordered_map<
+        AssetManager::ImageResourceMapIndex,
+        std::pair<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>>
+        &textureCache,
+    AssetManager::ImageResourceMapIndex textureID, VkFormat format,
+    VkCommandBuffer commandBuffer, float maxSamplerAnisotropy) {
+  auto it = textureCache.find(textureID);
+
+  if (it != textureCache.end()) {
+    _gpuBufferManager->increaseRefCount(it->second.second);
+    return it->second;
+  }
+
+  const AssetManager::ImageData &imgData =
+      _assetManager->getImageData(textureID);
+  Texture texture = createTexture2D(_logicalDevice, commandBuffer, imgData,
+                                    format, maxSamplerAnisotropy);
+  BindlessTextureHandle handle = _bindlessWriter->storeTexture(texture);
+  GpuBufferManager::GpuTextureMapIndex index =
+      _gpuBufferManager->transferTexture(std::move(texture));
+
+  const auto result = std::make_tuple(handle, index);
+  textureCache.emplace(textureID, result);
+
+  return result;
 }
 
 void Application::createOctreeScene() {
@@ -418,8 +427,7 @@ void Application::createDescriptorSets() {
       _pipelineManager->getOrCreateCameraLayout(_logicalDevice);
   _dynamicDescriptorSet =
       _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
-  _bindlessWriter =
-      BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
+  _bindlessWriter = BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
   _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
 
   _dynamicDescriptorSetWriter.storeDynamicBuffer(_dynamicUniformBuffersCamera,
