@@ -590,7 +590,7 @@ void Application::draw() {
       static_cast<uint32_t>(std::size(submitCommands));
   submitInfo.pCommandBuffers = submitCommands;
 
-  VkSemaphore signalSemaphores[] = {_renderFinishedSemaphores[_currentFrame]};
+  VkSemaphore signalSemaphores[] = {_renderFinishedSemaphores[imageIndex]};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
 
