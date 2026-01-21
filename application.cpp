@@ -140,7 +140,6 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
   createCommandBuffers();
   createSyncObjects();
   loadObjects(sceneData);
-  _assetManager.reset(); // Clear the CPU cache.
   createOctreeScene();
   setInput();
 }
@@ -290,21 +289,32 @@ void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
                                  VK_FORMAT_R8G8B8A8_UNORM,
                                  _physicalDevice->getMaxSamplerAnisotropy());
 
-  const AssetManager::VertexData &vData =
-      _assetManager->getVertexData(cubeData.vertexResourceID);
-  _vertexBufferCube = Buffer::createVertexBuffer(
-      _logicalDevice, vData.buffers.at("P").getSize());
-  _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
+  if (_physicalDevice->getPhysicalDeviceType() ==
+	  VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+    AssetManager::VertexData vData =
+		_assetManager->releaseVertexData(cubeData.vertexResourceID);
+    _vertexBufferCube = std::move(vData.buffers.at("P"));
+	_vertexBufferCubeNormals = std::move(vData.buffers.at("PN"));
+    _indexBufferCube = std::move(vData.indexBuffer);
+    _indexBufferCubeType = vData.indexType;
+  } else if (_physicalDevice->getPhysicalDeviceType() ==
+      VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+      const AssetManager::VertexData& vData =
+          _assetManager->getVertexData(cubeData.vertexResourceID);
+      _vertexBufferCube = Buffer::createVertexInputBuffer(
+          _logicalDevice, vData.buffers.at("P").getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+      _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
 
-  _vertexBufferCubeNormals = Buffer::createVertexBuffer(
-      _logicalDevice, vData.buffers.at("PN").getSize());
-  _vertexBufferCubeNormals.copyBuffer(commandBuffer, vData.buffers.at("PN"));
+      _vertexBufferCubeNormals = Buffer::createVertexInputBuffer(
+          _logicalDevice, vData.buffers.at("PN").getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+      _vertexBufferCubeNormals.copyBuffer(commandBuffer, vData.buffers.at("PN"));
 
-  _indexBufferCube =
-      Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
+      _indexBufferCube =
+          Buffer::createVertexInputBuffer(_logicalDevice, vData.indexBuffer.getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
-  _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
-  _indexBufferCubeType = vData.indexType;
+      _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
+      _indexBufferCubeType = vData.indexType;
+  }
 }
 
 void Application::loadObjects(
@@ -338,22 +348,26 @@ void Application::loadObjects(
     _registry.addComponent<MaterialComponent>(
         e, MaterialComponent{*diffuseHandle, *normalHandle,
                              *metallicRoughnessHandle});
-    const AssetManager::VertexData &vData =
-        _assetManager->getVertexData(sceneObject.vertexResourceID);
     MeshComponent msh;
-    msh.vertexBuffer = Buffer::createVertexBuffer(
-        _logicalDevice, vData.buffers.at("PTNT").getSize());
-
-    msh.vertexBuffer.copyBuffer(commandBuffer, vData.buffers.at("PTNT"));
-
-    msh.indexBuffer =
-        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
-
-    msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer);
-    msh.vertexBufferPrimitive = Buffer::createVertexBuffer(
-        _logicalDevice, vData.buffers.at("P").getSize());
-    msh.vertexBufferPrimitive.copyBuffer(commandBuffer, vData.buffers.at("P"));
-    msh.indexType = vData.indexType;
+	if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+      AssetManager::VertexData vData =
+        _assetManager->releaseVertexData(sceneObject.vertexResourceID);
+      msh.vertexBufferHandle = *_gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PTNT")));
+	  msh.vertexBufferPrimitiveHandle = *_gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
+	  msh.indexBufferHandle = *_gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
+      msh.indexType = vData.indexType;
+	}
+	else if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+      const AssetManager::VertexData& vData =
+		  _assetManager->getVertexData(sceneObject.vertexResourceID);
+      msh.vertexBufferHandle = *_gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.buffers.at("PTNT"), GpuBufferManager::BufferType::VERTEX);
+      msh.vertexBufferPrimitiveHandle = *_gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.buffers.at("P"), GpuBufferManager::BufferType::VERTEX);
+      msh.indexBufferHandle = *_gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.indexBuffer, GpuBufferManager::BufferType::INDEX);
+      msh.indexType = vData.indexType;
+    }
     msh.aabb = createAABBfromVertices(sceneObject.positions, sceneObject.model);
     _registry.addComponent<MeshComponent>(e, std::move(msh));
 
@@ -692,8 +706,8 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
       const auto &meshComponent =
           _registry.getComponent<MeshComponent>(object->getEntity());
-      const Buffer &indexBuffer = meshComponent.indexBuffer;
-      const Buffer &vertexBuffer = meshComponent.vertexBuffer;
+      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
+      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferHandle));
       static constexpr VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer.getVkBuffer(),
                              offsets);
@@ -945,10 +959,10 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = meshComponent.vertexBufferPrimitive.getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferPrimitiveHandle)).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = meshComponent.indexBuffer;
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
@@ -1028,10 +1042,10 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferHandle)).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = meshComponent.indexBuffer;
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
