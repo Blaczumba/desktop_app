@@ -61,16 +61,16 @@ class Application {
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
   Pipeline *_shadowPipeline;
-  BindlessTextureHandle _shadowHandle;
+  UniformTextureHandle _shadowHandle;
 
   // Skybox.
-  GpuBufferManager::GpuBufferMapIndex _vertexBufferCubeHandle;
-  GpuBufferManager::GpuBufferMapIndex _vertexBufferCubeNormalsHandle;
-  GpuBufferManager::GpuBufferMapIndex _indexBufferCubeHandle;
+  GpuBufferHandle _vertexBufferCubeHandle;
+  GpuBufferHandle _vertexBufferCubeNormalsHandle;
+  GpuBufferHandle _indexBufferCubeHandle;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
   Pipeline *_skyboxPipeline;
-  BindlessTextureHandle _skyboxHandle;
+  UniformTextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
@@ -78,9 +78,9 @@ class Application {
   Framebuffer _envMappingFramebuffer;
   Pipeline *_envMappingPipeline;
   Buffer _envMappingUniformBuffer;
-  BindlessBufferHandle _envMappingHandle;
+  UniformBufferHandle _envMappingHandle;
   std::array<Texture, 2> _envMappingAttachments;
-  BindlessTextureHandle _envMappingTextureHandle;
+  UniformTextureHandle _envMappingTextureHandle;
   // Second pass.
   Pipeline *_phongEnvMappingPipeline;
 
@@ -100,7 +100,7 @@ class Application {
 
   DescriptorSet _bindlessDescriptorSet;
   Buffer _lightBuffer;
-  BindlessBufferHandle _lightHandle;
+  UniformBufferHandle _lightHandle;
 
   Camera _camera;
 
@@ -150,15 +150,15 @@ private:
   void createShadowResources();
   void createEnvMappingResources();
 
-  void loadObjects(std::span<const VertexData<AssetManager>> sceneData);
-  std::tuple<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>
+  void loadObjects(std::span<const VertexData> sceneData);
+  std::tuple<UniformTextureHandle, GpuTextureHandle>
   getOrLoadTexture(
-      std::unordered_map<AssetManager::ImageResourceMapIndex,
-                         std::pair<BindlessTextureHandle,
-                                   GpuBufferManager::GpuTextureMapIndex>>
+      std::unordered_map<StagingImageDataResourceHandle,
+                         std::pair<UniformTextureHandle,
+                                   GpuTextureHandle>>
           &textureCache,
-      AssetManager::ImageResourceMapIndex textureID, VkFormat format,
+      StagingImageDataResourceHandle textureID, VkFormat format,
       VkCommandBuffer commandBuffer, float maxSamplerAnisotropy);
   void createOctreeScene();
-  void loadCubemap(const VertexData<AssetManager> &cubeData);
+  void loadCubemap(const VertexData &cubeData);
 };

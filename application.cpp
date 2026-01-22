@@ -126,7 +126,7 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
   // Load data from disk.
   std::string data = _fileLoader->loadFileToString(MODELS_PATH "cube.obj");
   VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
-  const std::vector<VertexData<AssetManager>> sceneData =
+  const std::vector<VertexData> sceneData =
       LoadGltfFromFile(*_assetManager, MODELS_PATH "sponza/scene.gltf");
   cubeData.diffuseTexture = {
       _assetManager->loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"),
@@ -278,7 +278,7 @@ void Application::createEnvMappingResources() {
       _bindlessWriter->storeTexture(_envMappingAttachments[0]);
 }
 
-void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
+void Application::loadCubemap(const VertexData &cubeData) {
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
@@ -312,18 +312,18 @@ void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
 }
 
 void Application::loadObjects(
-    std::span<const VertexData<AssetManager>> sceneData) {
+    std::span<const VertexData> sceneData) {
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
   std::unordered_map<
-      AssetManager::ImageResourceMapIndex,
-      std::pair<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>>
+      StagingImageDataResourceHandle,
+      std::pair<UniformTextureHandle, GpuTextureHandle>>
       textureCache;
   textureCache.reserve(sceneData.size());
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-  for (const VertexData<AssetManager> &sceneObject : sceneData) {
+  for (const VertexData &sceneObject : sceneData) {
     const auto [diffuseHandle, diffuseTextureIndex] = getOrLoadTexture(
         textureCache, sceneObject.diffuseTexture.ID, VK_FORMAT_R8G8B8A8_SRGB,
         commandBuffer, maxSamplerAnisotropy);
@@ -340,25 +340,25 @@ void Application::loadObjects(
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
-        e, MaterialComponent{*diffuseHandle, *normalHandle,
-                             *metallicRoughnessHandle});
+        e, MaterialComponent{diffuseHandle, normalHandle,
+                             metallicRoughnessHandle});
     MeshComponent msh;
 	if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
       AssetManager::VertexData vData =
         _assetManager->releaseVertexData(sceneObject.vertexResourceID);
-      msh.vertexBufferHandle = *_gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PTNT")));
-	  msh.vertexBufferPrimitiveHandle = *_gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
-	  msh.indexBufferHandle = *_gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
+      msh.vertexBufferHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PTNT")));
+	  msh.vertexBufferPrimitiveHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
+	  msh.indexBufferHandle = _gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
       msh.indexType = vData.indexType;
 	}
 	else if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
       const AssetManager::VertexData& vData =
 		  _assetManager->getVertexData(sceneObject.vertexResourceID);
-      msh.vertexBufferHandle = *_gpuBufferManager->uploadBuffer(
+      msh.vertexBufferHandle = _gpuBufferManager->uploadBuffer(
         commandBuffer, vData.buffers.at("PTNT"), GpuBufferManager::BufferType::VERTEX);
-      msh.vertexBufferPrimitiveHandle = *_gpuBufferManager->uploadBuffer(
+      msh.vertexBufferPrimitiveHandle = _gpuBufferManager->uploadBuffer(
         commandBuffer, vData.buffers.at("P"), GpuBufferManager::BufferType::VERTEX);
-      msh.indexBufferHandle = *_gpuBufferManager->uploadBuffer(
+      msh.indexBufferHandle = _gpuBufferManager->uploadBuffer(
         commandBuffer, vData.indexBuffer, GpuBufferManager::BufferType::INDEX);
       msh.indexType = vData.indexType;
     }
@@ -371,13 +371,13 @@ void Application::loadObjects(
   }
 }
 
-std::tuple<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>
+std::tuple<UniformTextureHandle, GpuTextureHandle>
 Application::getOrLoadTexture(
     std::unordered_map<
-        AssetManager::ImageResourceMapIndex,
-        std::pair<BindlessTextureHandle, GpuBufferManager::GpuTextureMapIndex>>
+        StagingImageDataResourceHandle,
+        std::pair<UniformTextureHandle, GpuTextureHandle>>
         &textureCache,
-    AssetManager::ImageResourceMapIndex textureID, VkFormat format,
+    StagingImageDataResourceHandle textureID, VkFormat format,
     VkCommandBuffer commandBuffer, float maxSamplerAnisotropy) {
   auto it = textureCache.find(textureID);
 
@@ -390,8 +390,8 @@ Application::getOrLoadTexture(
       _assetManager->getImageData(textureID);
   Texture texture = createTexture2D(_logicalDevice, commandBuffer, imgData,
                                     format, maxSamplerAnisotropy);
-  BindlessTextureHandle handle = _bindlessWriter->storeTexture(texture);
-  GpuBufferManager::GpuTextureMapIndex index =
+  UniformTextureHandle handle = _bindlessWriter->storeTexture(texture);
+  const GpuTextureHandle index =
       _gpuBufferManager->transferTexture(std::move(texture));
 
   const auto result = std::make_tuple(handle, index);
@@ -688,9 +688,9 @@ void Application::recordOctreeSecondaryCommandBuffer(
           .model = transformComponent.model,
           .descriptorHandles = {
               static_cast<uint32_t>(*_lightHandle),
-              static_cast<uint32_t>(materialComponent.diffuse),
-              static_cast<uint32_t>(materialComponent.normal),
-              static_cast<uint32_t>(materialComponent.metallicRoughness),
+              static_cast<uint32_t>(*materialComponent.diffuse),
+              static_cast<uint32_t>(*materialComponent.normal),
+              static_cast<uint32_t>(*materialComponent.metallicRoughness),
               static_cast<uint32_t>(*_shadowHandle)}};
 
       vkCmdPushConstants(
@@ -700,8 +700,8 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
       const auto &meshComponent =
           _registry.getComponent<MeshComponent>(object->getEntity());
-      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
-      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferHandle));
+      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
+      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferHandle));
       static constexpr VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer.getVkBuffer(),
                              offsets);
@@ -823,10 +823,10 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     static constexpr VkDeviceSize offsets[] = {0};
 
     const VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(
-        GpuBufferManager::GpuBufferMapIndex(_vertexBufferCubeHandle))
+        GpuBufferHandle(_vertexBufferCubeHandle))
         .getVkBuffer();
     const Buffer& indexBuffer = _gpuBufferManager->getBuffer(
-        GpuBufferManager::GpuBufferMapIndex(_indexBufferCubeHandle));
+        GpuBufferHandle(_indexBufferCubeHandle));
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
                            &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
@@ -882,7 +882,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         sizeof(envMapPc), &envMapPc);
 
     const VkBuffer vertexBufferCubeNormals = _gpuBufferManager->getBuffer(
-        GpuBufferManager::GpuBufferMapIndex(_vertexBufferCubeNormalsHandle))
+        GpuBufferHandle(_vertexBufferCubeNormalsHandle))
 		.getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
                            &vertexBufferCubeNormals, offsets);
@@ -960,10 +960,10 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferPrimitiveHandle)).getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferPrimitiveHandle)).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
@@ -1033,9 +1033,9 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         .model = transformComponent.model,
         .descriptorHandles = {
             static_cast<uint32_t>(*_envMappingHandle),
-            static_cast<uint32_t>(materialComponent.diffuse),
-            static_cast<uint32_t>(materialComponent.normal),
-            static_cast<uint32_t>(materialComponent.metallicRoughness),
+            static_cast<uint32_t>(*materialComponent.diffuse),
+            static_cast<uint32_t>(*materialComponent.normal),
+            static_cast<uint32_t>(*materialComponent.metallicRoughness),
             static_cast<uint32_t>(*_shadowHandle)}};
 
     vkCmdPushConstants(
@@ -1043,10 +1043,10 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.vertexBufferHandle)).getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferHandle)).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferManager::GpuBufferMapIndex(meshComponent.indexBufferHandle));
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
