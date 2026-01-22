@@ -293,26 +293,20 @@ void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
 	  VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
     AssetManager::VertexData vData =
 		_assetManager->releaseVertexData(cubeData.vertexResourceID);
-    _vertexBufferCube = std::move(vData.buffers.at("P"));
-	_vertexBufferCubeNormals = std::move(vData.buffers.at("PN"));
-    _indexBufferCube = std::move(vData.indexBuffer);
+    _vertexBufferCubeHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
+	_vertexBufferCubeNormalsHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PN")));
+    _indexBufferCubeHandle = _gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
     _indexBufferCubeType = vData.indexType;
   } else if (_physicalDevice->getPhysicalDeviceType() ==
       VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
       const AssetManager::VertexData& vData =
           _assetManager->getVertexData(cubeData.vertexResourceID);
-      _vertexBufferCube = Buffer::createVertexInputBuffer(
-          _logicalDevice, vData.buffers.at("P").getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-      _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
-
-      _vertexBufferCubeNormals = Buffer::createVertexInputBuffer(
-          _logicalDevice, vData.buffers.at("PN").getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-      _vertexBufferCubeNormals.copyBuffer(commandBuffer, vData.buffers.at("PN"));
-
-      _indexBufferCube =
-          Buffer::createVertexInputBuffer(_logicalDevice, vData.indexBuffer.getSize(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
-      _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
+      _vertexBufferCubeHandle = _gpuBufferManager->uploadBuffer(
+          commandBuffer, vData.buffers.at("P"), GpuBufferManager::BufferType::VERTEX);
+      _vertexBufferCubeNormalsHandle = _gpuBufferManager->uploadBuffer(
+          commandBuffer, vData.buffers.at("PN"), GpuBufferManager::BufferType::VERTEX);
+      _indexBufferCubeHandle =
+          _gpuBufferManager->uploadBuffer(commandBuffer, vData.indexBuffer, GpuBufferManager::BufferType::INDEX);
       _indexBufferCubeType = vData.indexType;
   }
 }
@@ -828,10 +822,14 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     static constexpr VkDeviceSize offsets[] = {0};
 
+    const VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(
+        GpuBufferManager::GpuBufferMapIndex(_vertexBufferCubeHandle))
+        .getVkBuffer();
+    const Buffer& indexBuffer = _gpuBufferManager->getBuffer(
+        GpuBufferManager::GpuBufferMapIndex(_indexBufferCubeHandle));
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                           &_vertexBufferCube.getVkBuffer(), offsets);
-
-    vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
+                           &vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
     const PushConstantsSkybox pc = {.proj = _camera.getProjectionMatrix(),
@@ -853,7 +851,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
                             descriptorSets, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
-                     _indexBufferCube.getSize() /
+                     indexBuffer.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 
@@ -883,14 +881,17 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(envMapPc), &envMapPc);
 
+    const VkBuffer vertexBufferCubeNormals = _gpuBufferManager->getBuffer(
+        GpuBufferManager::GpuBufferMapIndex(_vertexBufferCubeNormalsHandle))
+		.getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                           &_vertexBufferCubeNormals.getVkBuffer(), offsets);
+                           &vertexBufferCubeNormals, offsets);
 
-    vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
     vkCmdDrawIndexed(commandBuffer,
-                     _indexBufferCube.getSize() /
+        indexBuffer.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 

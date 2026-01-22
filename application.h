@@ -64,9 +64,9 @@ class Application {
   BindlessTextureHandle _shadowHandle;
 
   // Skybox.
-  Buffer _vertexBufferCube;
-  Buffer _vertexBufferCubeNormals;
-  Buffer _indexBufferCube;
+  GpuBufferManager::GpuBufferMapIndex _vertexBufferCubeHandle;
+  GpuBufferManager::GpuBufferMapIndex _vertexBufferCubeNormalsHandle;
+  GpuBufferManager::GpuBufferMapIndex _indexBufferCubeHandle;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
   Pipeline *_skyboxPipeline;
