@@ -124,7 +124,7 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
   _assetManager = AssetManager::create(_logicalDevice, *_fileLoader);
   _gpuBufferManager = GpuBufferManager::create();
   // Load data from disk.
-  std::string data = _fileLoader->loadFileToString(MODELS_PATH "cube.obj");
+  std::string data = _fileLoader->loadFileToString(MODELS_PATH "cone.obj");
   VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
   const std::vector<VertexData> sceneData =
       LoadGltfFromFile(*_assetManager, MODELS_PATH "sponza/scene.gltf");
@@ -552,7 +552,7 @@ void Application::run() {
         std::chrono::steady_clock::now();
     const float deltaTime =
         std::chrono::duration<float>(now - previous).count();
-    std::println("{}", 1.0f / deltaTime);
+    // std::println("{}", 1.0f / deltaTime);
     previous = now;
     _window->pollEvents();
     _camera.updateFromKeyboard(*_mouseKeyboardManager, deltaTime);
@@ -700,8 +700,8 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
       const auto &meshComponent =
           _registry.getComponent<MeshComponent>(object->getEntity());
-      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
-      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferHandle));
+      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
+      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferHandle);
       static constexpr VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer.getVkBuffer(),
                              offsets);
@@ -823,10 +823,10 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
     static constexpr VkDeviceSize offsets[] = {0};
 
     const VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(
-        GpuBufferHandle(_vertexBufferCubeHandle))
+        _vertexBufferCubeHandle)
         .getVkBuffer();
     const Buffer& indexBuffer = _gpuBufferManager->getBuffer(
-        GpuBufferHandle(_indexBufferCubeHandle));
+        _indexBufferCubeHandle);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
                            &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
@@ -882,7 +882,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         sizeof(envMapPc), &envMapPc);
 
     const VkBuffer vertexBufferCubeNormals = _gpuBufferManager->getBuffer(
-        GpuBufferHandle(_vertexBufferCubeNormalsHandle))
+        _vertexBufferCubeNormalsHandle)
 		.getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
                            &vertexBufferCubeNormals, offsets);
@@ -960,10 +960,10 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferPrimitiveHandle)).getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferPrimitiveHandle).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
@@ -1043,10 +1043,10 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.vertexBufferHandle)).getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferHandle).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(GpuBufferHandle(meshComponent.indexBufferHandle));
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
