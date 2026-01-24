@@ -14,7 +14,7 @@
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
-#include "bejzak_engine/vulkan/wrapper/descriptor_set/bindless_descriptor_set_writer.h"
+#include "bejzak_engine/vulkan/resource_manager/bindless_descriptor_set_writer.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_pool.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set_layout.h"
