@@ -1,7 +1,6 @@
 #include "application.h"
 
 #include <memory>
-#include <stacktrace>
 #include <print>
 
 #include "bejzak_engine/common/util/engine_exception.h"
@@ -14,10 +13,10 @@ int main() {
 	app.run();
   }
   catch (const VkException& vkException) {
-	  std::println("Vulkan exception occured with message: {} and VkResult code: {}. \n {}", vkException.what(), static_cast<std::int32_t>(vkException.getResult()), std::stacktrace::current());
+	  std::println("Vulkan exception occured with message: {} and VkResult code: {}. \n {}", vkException.what(), static_cast<std::int32_t>(vkException.getResult()), vkException.stackTrace());
   }
   catch (const EngineException& engineException) {
-	  std::println("Vulkan exception occured with message: {}. \n {}", engineException.what(), std::stacktrace::current());
+	  std::println("Vulkan exception occured with message: {}. \n {}", engineException.what(), engineException.stackTrace());
   }
 
   return EXIT_SUCCESS;
