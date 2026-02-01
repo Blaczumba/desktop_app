@@ -38,8 +38,6 @@ Texture createSkybox(const LogicalDevice &logicalDevice,
                      VK_IMAGE_USAGE_SAMPLED_BIT)
           .withLayerCount(6)
           .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-          .withMaxAnisotropy(samplerAnisotropy)
-          .withMaxLod(static_cast<float>(imageData.mipLevels))
           .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
           .buildImage(logicalDevice, commandBuffer,
                       imageData.stagingBuffer.getVkBuffer(),
@@ -62,9 +60,6 @@ Texture createCubemap(const LogicalDevice &logicalDevice,
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | additionalUsage)
           .withLayerCount(6)
           .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-          .withMaxAnisotropy(samplerAnisotropy)
-          .withNumSamples(VK_SAMPLE_COUNT_1_BIT)
-          .withMipmapMode(VK_SAMPLER_MIPMAP_MODE_NEAREST)
           .buildAttachment(logicalDevice, commandBuffer);
   texture.addCreateVkImageView(0, 1, 0, 6);
   return texture;
@@ -73,7 +68,6 @@ Texture createCubemap(const LogicalDevice &logicalDevice,
 Texture createShadowmap(const LogicalDevice &logicalDevice,
                         VkCommandBuffer commandBuffer, uint32_t width,
                         uint32_t height, VkFormat format) {
-
   Texture texture =
       TextureBuilder()
           .withAspect(VK_IMAGE_ASPECT_DEPTH_BIT)
@@ -81,11 +75,6 @@ Texture createShadowmap(const LogicalDevice &logicalDevice,
           .withFormat(format)
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT |
                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-          .withAddressModes(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
-          .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
-          .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
           .buildImageSampler(logicalDevice, commandBuffer);
   texture.addCreateVkImageView(0, 1, 0, 1);
   return texture;
@@ -103,8 +92,6 @@ Texture createTexture2D(const LogicalDevice &logicalDevice,
                         .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                    VK_IMAGE_USAGE_SAMPLED_BIT)
-                        .withMaxAnisotropy(samplerAnisotropy)
-                        .withMaxLod(static_cast<float>(imageData.mipLevels))
                         .buildMipmapImage(logicalDevice, commandBuffer,
                                           imageData.stagingBuffer.getVkBuffer(),
                                           imageData.copyRegions);
@@ -123,6 +110,7 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
   init();
   _assetManager = AssetManager::create(_logicalDevice, *_fileLoader);
   _gpuBufferManager = GpuBufferManager::create();
+  _samplerManager = SamplerManager::create();
   // Load data from disk.
   std::string data = _fileLoader->loadFileToString(MODELS_PATH "cone.obj");
   VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
@@ -274,8 +262,12 @@ void Application::createEnvMappingResources() {
       Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform));
   _envMappingUniformBuffer.copyData(faceTransform);
   _envMappingHandle = _bindlessWriter->storeBuffer(_envMappingUniformBuffer);
+  Sampler sampler = SamplerBuilder()
+      .withAnisotropy(samplerAnisotropy)
+      .build(_logicalDevice);
   _envMappingTextureHandle =
-      _bindlessWriter->storeTexture(_envMappingAttachments[0]);
+      _bindlessWriter->storeTexture(_envMappingAttachments[0], sampler);
+  _samplerManager->transferSampler(std::move(sampler));
 }
 
 void Application::loadCubemap(const VertexData &cubeData) {
@@ -323,19 +315,25 @@ void Application::loadObjects(
   textureCache.reserve(sceneData.size());
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
+  Sampler sampler = SamplerBuilder()
+      .withAnisotropy(_physicalDevice->getMaxSamplerAnisotropy())
+	  .withLodRange(0.0f, VK_LOD_CLAMP_NONE)
+	  .build(_logicalDevice);
+  SamplerHandle samplerHandle = _samplerManager->transferSampler(std::move(sampler));
+
   for (const VertexData &sceneObject : sceneData) {
     const auto [diffuseHandle, diffuseTextureIndex] = getOrLoadTexture(
         textureCache, sceneObject.diffuseTexture.ID, VK_FORMAT_R8G8B8A8_SRGB,
-        commandBuffer, maxSamplerAnisotropy);
+        commandBuffer, maxSamplerAnisotropy, samplerHandle);
 
     const auto [normalHandle, normalTextureIndex] = getOrLoadTexture(
         textureCache, sceneObject.normalTexture.ID, VK_FORMAT_R8G8B8A8_UNORM,
-        commandBuffer, maxSamplerAnisotropy);
+        commandBuffer, maxSamplerAnisotropy, samplerHandle);
 
     const auto [metallicRoughnessHandle, metallicRoughnessTextureIndex] =
         getOrLoadTexture(textureCache, sceneObject.metallicRoughnessTexture.ID,
                          VK_FORMAT_R8G8B8A8_UNORM, commandBuffer,
-                         maxSamplerAnisotropy);
+                         maxSamplerAnisotropy, samplerHandle);
 
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
@@ -378,7 +376,7 @@ Application::getOrLoadTexture(
         std::pair<UniformTextureHandle, GpuTextureHandle>>
         &textureCache,
     StagingImageDataResourceHandle textureID, VkFormat format,
-    VkCommandBuffer commandBuffer, float maxSamplerAnisotropy) {
+    VkCommandBuffer commandBuffer, float maxSamplerAnisotropy, SamplerHandle samplerHandle) {
   auto it = textureCache.find(textureID);
 
   if (it != textureCache.end()) {
@@ -390,7 +388,7 @@ Application::getOrLoadTexture(
       _assetManager->getImageData(textureID);
   Texture texture = createTexture2D(_logicalDevice, commandBuffer, imgData,
                                     format, maxSamplerAnisotropy);
-  UniformTextureHandle handle = _bindlessWriter->storeTexture(texture);
+  UniformTextureHandle handle = _bindlessWriter->storeTexture(texture, _samplerManager->getSampler(samplerHandle));
   const GpuTextureHandle index =
       _gpuBufferManager->transferTexture(std::move(texture));
 
@@ -436,7 +434,11 @@ void Application::createDescriptorSets() {
   _dynamicDescriptorSet =
       _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
   _bindlessWriter = BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
-  _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
+  Sampler sampler = SamplerBuilder()
+	  .withAnisotropy(_physicalDevice->getMaxSamplerAnisotropy())
+	  .build(_logicalDevice);
+  _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap, sampler);
+  _samplerManager->transferSampler(std::move(sampler));
 
   _dynamicDescriptorSetWriter.storeDynamicBuffer(_dynamicUniformBuffersCamera,
                                                  size);
@@ -516,7 +518,15 @@ void Application::createShadowResources() {
     _shadowMap = createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
                                  1024 * 2, VK_FORMAT_D32_SFLOAT);
   }
-  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
+  Sampler sampler = SamplerBuilder()
+      .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
+      .withAddressMode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
+      .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
+	  .build(_logicalDevice);
+  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap, std::move(sampler));
+  _samplerManager->transferSampler(std::move(sampler));
 
   AttachmentLayout attachmentLayout;
   attachmentLayout.addShadowAttachment(

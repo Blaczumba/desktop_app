@@ -12,6 +12,7 @@
 #include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
 #include "bejzak_engine/vulkan/resource_manager/gpu_buffer_manager.h"
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
+#include "bejzak_engine/vulkan/resource_manager/sampler_manager.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
 #include "bejzak_engine/vulkan/resource_manager/bindless_descriptor_set_writer.h"
@@ -52,6 +53,8 @@ class Application {
   Registry _registry;
   std::unique_ptr<AssetManager> _assetManager;
   std::unique_ptr<GpuBufferManager> _gpuBufferManager;
+  std::unique_ptr<SamplerManager> _samplerManager;
+
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;
@@ -158,7 +161,7 @@ private:
                                    GpuTextureHandle>>
           &textureCache,
       StagingImageDataResourceHandle textureID, VkFormat format,
-      VkCommandBuffer commandBuffer, float maxSamplerAnisotropy);
+      VkCommandBuffer commandBuffer, float maxSamplerAnisotropy, SamplerHandle samplerHandle);
   void createOctreeScene();
   void loadCubemap(const VertexData &cubeData);
 };
