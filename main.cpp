@@ -13,10 +13,10 @@ int main() {
 	app.run();
   }
   catch (const VkException& vkException) {
-	  std::println("Vulkan exception occured with message: {} and VkResult code: {}.", vkException.what(), static_cast<std::int32_t>(vkException.getResult()));
+	  std::println("Vulkan exception occured with message: {} and VkResult code: {}. \n {}", vkException.what(), static_cast<std::int32_t>(vkException.getResult()), vkException.stackTrace());
   }
   catch (const EngineException& engineException) {
-	  std::println("Vulkan exception occured with message: {}.", engineException.what());
+	  std::println("Vulkan exception occured with message: {}. \n {}", engineException.what(), engineException.stackTrace());
   }
 
   return EXIT_SUCCESS;

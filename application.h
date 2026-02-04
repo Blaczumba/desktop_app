@@ -10,10 +10,12 @@
 #include "bejzak_engine/common/util/primitives.h"
 #include "bejzak_engine/common/window/window_glfw.h"
 #include "bejzak_engine/vulkan/resource_manager/asset_manager.h"
+#include "bejzak_engine/vulkan/resource_manager/gpu_buffer_manager.h"
 #include "bejzak_engine/vulkan/resource_manager/pipeline_manager.h"
+#include "bejzak_engine/vulkan/resource_manager/sampler_manager.h"
 #include "bejzak_engine/vulkan/wrapper/command_buffer/command_buffer.h"
 #include "bejzak_engine/vulkan/wrapper/debug_messenger/debug_messenger.h"
-#include "bejzak_engine/vulkan/wrapper/descriptor_set/bindless_descriptor_set_writer.h"
+#include "bejzak_engine/vulkan/resource_manager/bindless_descriptor_set_writer.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_pool.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set.h"
 #include "bejzak_engine/vulkan/wrapper/descriptor_set/descriptor_set_layout.h"
@@ -46,11 +48,13 @@ class Application {
 
   std::unique_ptr<PipelineManager> _pipelineManager;
 
-  std::unordered_map<std::string, std::pair<BindlessTextureHandle, Texture>> _textures;
   std::vector<Object> _objects;
   std::unique_ptr<Octree> _octree;
   Registry _registry;
   std::unique_ptr<AssetManager> _assetManager;
+  std::unique_ptr<GpuBufferManager> _gpuBufferManager;
+  std::unique_ptr<SamplerManager> _samplerManager;
+
   Renderpass _renderPass;
   std::vector<Framebuffer> _framebuffers;
   std::vector<Texture> _attachments;
@@ -60,16 +64,16 @@ class Application {
   Framebuffer _shadowFramebuffer;
   Texture _shadowMap;
   Pipeline *_shadowPipeline;
-  BindlessTextureHandle _shadowHandle;
+  UniformTextureHandle _shadowHandle;
 
   // Skybox.
-  Buffer _vertexBufferCube;
-  Buffer _vertexBufferCubeNormals;
-  Buffer _indexBufferCube;
+  GpuBufferHandle _vertexBufferCubeHandle;
+  GpuBufferHandle _vertexBufferCubeNormalsHandle;
+  GpuBufferHandle _indexBufferCubeHandle;
   Texture _textureCubemap;
   VkIndexType _indexBufferCubeType;
   Pipeline *_skyboxPipeline;
-  BindlessTextureHandle _skyboxHandle;
+  UniformTextureHandle _skyboxHandle;
 
   // Mirror cubemap
   // First pass.
@@ -77,9 +81,9 @@ class Application {
   Framebuffer _envMappingFramebuffer;
   Pipeline *_envMappingPipeline;
   Buffer _envMappingUniformBuffer;
-  BindlessBufferHandle _envMappingHandle;
+  UniformBufferHandle _envMappingHandle;
   std::array<Texture, 2> _envMappingAttachments;
-  BindlessTextureHandle _envMappingTextureHandle;
+  UniformTextureHandle _envMappingTextureHandle;
   // Second pass.
   Pipeline *_phongEnvMappingPipeline;
 
@@ -95,12 +99,11 @@ class Application {
   Buffer _dynamicUniformBuffersCamera;
   DescriptorSet _dynamicDescriptorSet;
 
-  std::unique_ptr<BindlessDescriptorSetWriter>
-      _bindlessWriter;
+  std::unique_ptr<BindlessDescriptorSetWriter> _bindlessWriter;
 
   DescriptorSet _bindlessDescriptorSet;
   Buffer _lightBuffer;
-  BindlessBufferHandle _lightHandle;
+  UniformBufferHandle _lightHandle;
 
   Camera _camera;
 
@@ -150,7 +153,15 @@ private:
   void createShadowResources();
   void createEnvMappingResources();
 
-  void loadObjects(std::span<const VertexData<AssetManager>> sceneData);
+  void loadObjects(std::span<const VertexData> sceneData);
+  std::tuple<UniformTextureHandle, GpuTextureHandle>
+  getOrLoadTexture(
+      std::unordered_map<StagingImageDataResourceHandle,
+                         std::pair<UniformTextureHandle,
+                                   GpuTextureHandle>>
+          &textureCache,
+      StagingImageDataResourceHandle textureID, VkFormat format,
+      VkCommandBuffer commandBuffer, float maxSamplerAnisotropy, SamplerHandle samplerHandle);
   void createOctreeScene();
-  void loadCubemap(const VertexData<AssetManager> &cubeData);
+  void loadCubemap(const VertexData &cubeData);
 };

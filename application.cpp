@@ -38,8 +38,6 @@ Texture createSkybox(const LogicalDevice &logicalDevice,
                      VK_IMAGE_USAGE_SAMPLED_BIT)
           .withLayerCount(6)
           .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-          .withMaxAnisotropy(samplerAnisotropy)
-          .withMaxLod(static_cast<float>(imageData.mipLevels))
           .withLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
           .buildImage(logicalDevice, commandBuffer,
                       imageData.stagingBuffer.getVkBuffer(),
@@ -62,9 +60,6 @@ Texture createCubemap(const LogicalDevice &logicalDevice,
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT | additionalUsage)
           .withLayerCount(6)
           .withAdditionalCreateInfoFlags(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-          .withMaxAnisotropy(samplerAnisotropy)
-          .withNumSamples(VK_SAMPLE_COUNT_1_BIT)
-          .withMipmapMode(VK_SAMPLER_MIPMAP_MODE_NEAREST)
           .buildAttachment(logicalDevice, commandBuffer);
   texture.addCreateVkImageView(0, 1, 0, 6);
   return texture;
@@ -73,7 +68,6 @@ Texture createCubemap(const LogicalDevice &logicalDevice,
 Texture createShadowmap(const LogicalDevice &logicalDevice,
                         VkCommandBuffer commandBuffer, uint32_t width,
                         uint32_t height, VkFormat format) {
-
   Texture texture =
       TextureBuilder()
           .withAspect(VK_IMAGE_ASPECT_DEPTH_BIT)
@@ -81,11 +75,6 @@ Texture createShadowmap(const LogicalDevice &logicalDevice,
           .withFormat(format)
           .withUsage(VK_IMAGE_USAGE_SAMPLED_BIT |
                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-          .withAddressModes(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
-          .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
-          .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
           .buildImageSampler(logicalDevice, commandBuffer);
   texture.addCreateVkImageView(0, 1, 0, 1);
   return texture;
@@ -103,8 +92,6 @@ Texture createTexture2D(const LogicalDevice &logicalDevice,
                         .withUsage(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                    VK_IMAGE_USAGE_SAMPLED_BIT)
-                        .withMaxAnisotropy(samplerAnisotropy)
-                        .withMaxLod(static_cast<float>(imageData.mipLevels))
                         .buildMipmapImage(logicalDevice, commandBuffer,
                                           imageData.stagingBuffer.getVkBuffer(),
                                           imageData.copyRegions);
@@ -122,10 +109,12 @@ Application::Application(std::unique_ptr<FileLoader> &&fileLoader)
       _fileLoader(std::move(fileLoader)) {
   init();
   _assetManager = AssetManager::create(_logicalDevice, *_fileLoader);
+  _gpuBufferManager = GpuBufferManager::create();
+  _samplerManager = SamplerManager::create();
   // Load data from disk.
-  std::string data = _fileLoader->loadFileToString(MODELS_PATH "cube.obj");
+  std::string data = _fileLoader->loadFileToString(MODELS_PATH "cone.obj");
   VertexData cubeData = loadObj(*_assetManager, "cube.obj", data);
-  const std::vector<VertexData<AssetManager>> sceneData =
+  const std::vector<VertexData> sceneData =
       LoadGltfFromFile(*_assetManager, MODELS_PATH "sponza/scene.gltf");
   cubeData.diffuseTexture = {
       _assetManager->loadImageAsync(TEXTURES_PATH "cubemap_yokohama_rgba.ktx"),
@@ -273,11 +262,15 @@ void Application::createEnvMappingResources() {
       Buffer::createUniformBuffer(_logicalDevice, sizeof(faceTransform));
   _envMappingUniformBuffer.copyData(faceTransform);
   _envMappingHandle = _bindlessWriter->storeBuffer(_envMappingUniformBuffer);
+  Sampler sampler = SamplerBuilder()
+      .withAnisotropy(samplerAnisotropy)
+      .build(_logicalDevice);
   _envMappingTextureHandle =
-      _bindlessWriter->storeTexture(_envMappingAttachments[0]);
+      _bindlessWriter->storeTexture(_envMappingAttachments[0], sampler);
+  _samplerManager->transferSampler(std::move(sampler));
 }
 
-void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
+void Application::loadCubemap(const VertexData &cubeData) {
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
 
@@ -288,92 +281,85 @@ void Application::loadCubemap(const VertexData<AssetManager> &cubeData) {
                                  VK_FORMAT_R8G8B8A8_UNORM,
                                  _physicalDevice->getMaxSamplerAnisotropy());
 
-  const AssetManager::VertexData &vData =
-      _assetManager->getVertexData(cubeData.vertexResourceID);
-  _vertexBufferCube = Buffer::createVertexBuffer(
-      _logicalDevice, vData.buffers.at("P").getSize());
-  _vertexBufferCube.copyBuffer(commandBuffer, vData.buffers.at("P"));
-
-  _vertexBufferCubeNormals = Buffer::createVertexBuffer(
-      _logicalDevice, vData.buffers.at("PN").getSize());
-  _vertexBufferCubeNormals.copyBuffer(commandBuffer, vData.buffers.at("PN"));
-
-  _indexBufferCube =
-      Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
-
-  _indexBufferCube.copyBuffer(commandBuffer, vData.indexBuffer);
-  _indexBufferCubeType = vData.indexType;
+  if (_physicalDevice->getPhysicalDeviceType() ==
+	  VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+    AssetManager::VertexData vData =
+		_assetManager->releaseVertexData(cubeData.vertexResourceID);
+    _vertexBufferCubeHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
+	_vertexBufferCubeNormalsHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PN")));
+    _indexBufferCubeHandle = _gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
+    _indexBufferCubeType = vData.indexType;
+  } else if (_physicalDevice->getPhysicalDeviceType() ==
+      VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+      const AssetManager::VertexData& vData =
+          _assetManager->getVertexData(cubeData.vertexResourceID);
+      _vertexBufferCubeHandle = _gpuBufferManager->uploadBuffer(
+          commandBuffer, vData.buffers.at("P"), GpuBufferManager::BufferType::VERTEX);
+      _vertexBufferCubeNormalsHandle = _gpuBufferManager->uploadBuffer(
+          commandBuffer, vData.buffers.at("PN"), GpuBufferManager::BufferType::VERTEX);
+      _indexBufferCubeHandle =
+          _gpuBufferManager->uploadBuffer(commandBuffer, vData.indexBuffer, GpuBufferManager::BufferType::INDEX);
+      _indexBufferCubeType = vData.indexType;
+  }
 }
 
 void Application::loadObjects(
-    std::span<const VertexData<AssetManager>> sceneData) {
+    std::span<const VertexData> sceneData) {
   const float maxSamplerAnisotropy = _physicalDevice->getMaxSamplerAnisotropy();
   _objects.reserve(sceneData.size());
 
+  std::unordered_map<
+      StagingImageDataResourceHandle,
+      std::pair<UniformTextureHandle, GpuTextureHandle>>
+      textureCache;
+  textureCache.reserve(sceneData.size());
   SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
   const VkCommandBuffer commandBuffer = handle.getCommandBuffer();
-  for (const VertexData<AssetManager> &sceneObject : sceneData) {
-    const std::string diffusePath =
-        MODELS_PATH "sponza/" + sceneObject.diffuseTexture.path;
-    if (!_textures.contains(diffusePath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.diffuseTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_SRGB, maxSamplerAnisotropy);
-      _textures.emplace(diffusePath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+  Sampler sampler = SamplerBuilder()
+      .withAnisotropy(_physicalDevice->getMaxSamplerAnisotropy())
+	  .withLodRange(0.0f, VK_LOD_CLAMP_NONE)
+	  .build(_logicalDevice);
+  SamplerHandle samplerHandle = _samplerManager->transferSampler(std::move(sampler));
 
-    const std::string normalPath =
-        MODELS_PATH "sponza/" + sceneObject.normalTexture.path;
-    if (!_textures.contains(normalPath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.normalTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
-      _textures.emplace(normalPath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+  for (const VertexData &sceneObject : sceneData) {
+    const auto [diffuseHandle, diffuseTextureIndex] = getOrLoadTexture(
+        textureCache, sceneObject.diffuseTexture.ID, VK_FORMAT_R8G8B8A8_SRGB,
+        commandBuffer, maxSamplerAnisotropy, samplerHandle);
 
-    const std::string metallicRoughnessPath =
-        MODELS_PATH "sponza/" + sceneObject.metallicRoughnessTexture.path;
-    if (!_textures.contains(metallicRoughnessPath)) {
-      const AssetManager::ImageData &imgData =
-          _assetManager->getImageData(sceneObject.metallicRoughnessTexture.ID);
-      Texture texture =
-          createTexture2D(_logicalDevice, commandBuffer, imgData,
-                          VK_FORMAT_R8G8B8A8_UNORM, maxSamplerAnisotropy);
-      _textures.emplace(metallicRoughnessPath,
-                        std::make_pair(_bindlessWriter->storeTexture(texture),
-                                       std::move(texture)));
-    }
+    const auto [normalHandle, normalTextureIndex] = getOrLoadTexture(
+        textureCache, sceneObject.normalTexture.ID, VK_FORMAT_R8G8B8A8_UNORM,
+        commandBuffer, maxSamplerAnisotropy, samplerHandle);
+
+    const auto [metallicRoughnessHandle, metallicRoughnessTextureIndex] =
+        getOrLoadTexture(textureCache, sceneObject.metallicRoughnessTexture.ID,
+                         VK_FORMAT_R8G8B8A8_UNORM, commandBuffer,
+                         maxSamplerAnisotropy, samplerHandle);
 
     Entity e = _registry.createEntity();
     _objects.emplace_back("", e);
     _registry.addComponent<MaterialComponent>(
-        e, MaterialComponent{*_textures[diffusePath].first,
-                             *_textures[normalPath].first,
-                             *_textures[metallicRoughnessPath].first});
-    const AssetManager::VertexData &vData =
-        _assetManager->getVertexData(sceneObject.vertexResourceID);
+        e, MaterialComponent{diffuseHandle, normalHandle,
+                             metallicRoughnessHandle});
     MeshComponent msh;
-    msh.vertexBuffer = Buffer::createVertexBuffer(
-        _logicalDevice, vData.buffers.at("PTNT").getSize());
-
-    msh.vertexBuffer.copyBuffer(commandBuffer, vData.buffers.at("PTNT"));
-
-    msh.indexBuffer =
-        Buffer::createIndexBuffer(_logicalDevice, vData.indexBuffer.getSize());
-
-    msh.indexBuffer.copyBuffer(commandBuffer, vData.indexBuffer);
-    msh.vertexBufferPrimitive = Buffer::createVertexBuffer(
-        _logicalDevice, vData.buffers.at("P").getSize());
-    msh.vertexBufferPrimitive.copyBuffer(commandBuffer, vData.buffers.at("P"));
-    msh.indexType = vData.indexType;
+	if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+      AssetManager::VertexData vData =
+        _assetManager->releaseVertexData(sceneObject.vertexResourceID);
+      msh.vertexBufferHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("PTNT")));
+	  msh.vertexBufferPrimitiveHandle = _gpuBufferManager->transferBuffer(std::move(vData.buffers.at("P")));
+	  msh.indexBufferHandle = _gpuBufferManager->transferBuffer(std::move(vData.indexBuffer));
+      msh.indexType = vData.indexType;
+	}
+	else if (_physicalDevice->getPhysicalDeviceType() == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+      const AssetManager::VertexData& vData =
+		  _assetManager->getVertexData(sceneObject.vertexResourceID);
+      msh.vertexBufferHandle = _gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.buffers.at("PTNT"), GpuBufferManager::BufferType::VERTEX);
+      msh.vertexBufferPrimitiveHandle = _gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.buffers.at("P"), GpuBufferManager::BufferType::VERTEX);
+      msh.indexBufferHandle = _gpuBufferManager->uploadBuffer(
+        commandBuffer, vData.indexBuffer, GpuBufferManager::BufferType::INDEX);
+      msh.indexType = vData.indexType;
+    }
     msh.aabb = createAABBfromVertices(sceneObject.positions, sceneObject.model);
     _registry.addComponent<MeshComponent>(e, std::move(msh));
 
@@ -381,6 +367,35 @@ void Application::loadObjects(
     trsf.model = sceneObject.model;
     _registry.addComponent<TransformComponent>(e, std::move(trsf));
   }
+}
+
+std::tuple<UniformTextureHandle, GpuTextureHandle>
+Application::getOrLoadTexture(
+    std::unordered_map<
+        StagingImageDataResourceHandle,
+        std::pair<UniformTextureHandle, GpuTextureHandle>>
+        &textureCache,
+    StagingImageDataResourceHandle textureID, VkFormat format,
+    VkCommandBuffer commandBuffer, float maxSamplerAnisotropy, SamplerHandle samplerHandle) {
+  auto it = textureCache.find(textureID);
+
+  if (it != textureCache.end()) {
+    _gpuBufferManager->increaseRefCount(it->second.second);
+    return it->second;
+  }
+
+  const AssetManager::ImageData &imgData =
+      _assetManager->getImageData(textureID);
+  Texture texture = createTexture2D(_logicalDevice, commandBuffer, imgData,
+                                    format, maxSamplerAnisotropy);
+  UniformTextureHandle handle = _bindlessWriter->storeTexture(texture, _samplerManager->getSampler(samplerHandle));
+  const GpuTextureHandle index =
+      _gpuBufferManager->transferTexture(std::move(texture));
+
+  const auto result = std::make_tuple(handle, index);
+  textureCache.emplace(textureID, result);
+
+  return result;
 }
 
 void Application::createOctreeScene() {
@@ -418,9 +433,12 @@ void Application::createDescriptorSets() {
       _pipelineManager->getOrCreateCameraLayout(_logicalDevice);
   _dynamicDescriptorSet =
       _dynamicDescriptorPool->createDesriptorSet(cameraLayout);
-  _bindlessWriter =
-      BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
-  _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap);
+  _bindlessWriter = BindlessDescriptorSetWriter::create(_bindlessDescriptorSet);
+  Sampler sampler = SamplerBuilder()
+	  .withAnisotropy(_physicalDevice->getMaxSamplerAnisotropy())
+	  .build(_logicalDevice);
+  _skyboxHandle = _bindlessWriter->storeTexture(_textureCubemap, sampler);
+  _samplerManager->transferSampler(std::move(sampler));
 
   _dynamicDescriptorSetWriter.storeDynamicBuffer(_dynamicUniformBuffersCamera,
                                                  size);
@@ -500,7 +518,15 @@ void Application::createShadowResources() {
     _shadowMap = createShadowmap(_logicalDevice, commandBuffer, 1024 * 2,
                                  1024 * 2, VK_FORMAT_D32_SFLOAT);
   }
-  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap);
+  Sampler sampler = SamplerBuilder()
+      .withCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL)
+      .withAddressMode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)
+      .withBorderColor(VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE)
+	  .build(_logicalDevice);
+  _shadowHandle = _bindlessWriter->storeTexture(_shadowMap, std::move(sampler));
+  _samplerManager->transferSampler(std::move(sampler));
 
   AttachmentLayout attachmentLayout;
   attachmentLayout.addShadowAttachment(
@@ -536,7 +562,7 @@ void Application::run() {
         std::chrono::steady_clock::now();
     const float deltaTime =
         std::chrono::duration<float>(now - previous).count();
-    std::println("{}", 1.0f / deltaTime);
+    // std::println("{}", 1.0f / deltaTime);
     previous = now;
     _window->pollEvents();
     _camera.updateFromKeyboard(*_mouseKeyboardManager, deltaTime);
@@ -582,7 +608,7 @@ void Application::draw() {
       static_cast<uint32_t>(std::size(submitCommands));
   submitInfo.pCommandBuffers = submitCommands;
 
-  VkSemaphore signalSemaphores[] = {_renderFinishedSemaphores[_currentFrame]};
+  VkSemaphore signalSemaphores[] = {_renderFinishedSemaphores[imageIndex]};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -672,9 +698,9 @@ void Application::recordOctreeSecondaryCommandBuffer(
           .model = transformComponent.model,
           .descriptorHandles = {
               static_cast<uint32_t>(*_lightHandle),
-              static_cast<uint32_t>(materialComponent.diffuse),
-              static_cast<uint32_t>(materialComponent.normal),
-              static_cast<uint32_t>(materialComponent.metallicRoughness),
+              static_cast<uint32_t>(*materialComponent.diffuse),
+              static_cast<uint32_t>(*materialComponent.normal),
+              static_cast<uint32_t>(*materialComponent.metallicRoughness),
               static_cast<uint32_t>(*_shadowHandle)}};
 
       vkCmdPushConstants(
@@ -684,8 +710,8 @@ void Application::recordOctreeSecondaryCommandBuffer(
 
       const auto &meshComponent =
           _registry.getComponent<MeshComponent>(object->getEntity());
-      const Buffer &indexBuffer = meshComponent.indexBuffer;
-      const Buffer &vertexBuffer = meshComponent.vertexBuffer;
+      const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
+      const Buffer &vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferHandle);
       static constexpr VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer.getVkBuffer(),
                              offsets);
@@ -806,10 +832,14 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
 
     static constexpr VkDeviceSize offsets[] = {0};
 
+    const VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(
+        _vertexBufferCubeHandle)
+        .getVkBuffer();
+    const Buffer& indexBuffer = _gpuBufferManager->getBuffer(
+        _indexBufferCubeHandle);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                           &_vertexBufferCube.getVkBuffer(), offsets);
-
-    vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
+                           &vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
     const PushConstantsSkybox pc = {.proj = _camera.getProjectionMatrix(),
@@ -831,7 +861,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
                             descriptorSets, 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer,
-                     _indexBufferCube.getSize() /
+                     indexBuffer.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 
@@ -861,14 +891,17 @@ void Application::recordCommandBuffer(uint32_t imageIndex) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(envMapPc), &envMapPc);
 
+    const VkBuffer vertexBufferCubeNormals = _gpuBufferManager->getBuffer(
+        _vertexBufferCubeNormalsHandle)
+		.getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                           &_vertexBufferCubeNormals.getVkBuffer(), offsets);
+                           &vertexBufferCubeNormals, offsets);
 
-    vkCmdBindIndexBuffer(commandBuffer, _indexBufferCube.getVkBuffer(), 0,
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          _indexBufferCubeType);
 
     vkCmdDrawIndexed(commandBuffer,
-                     _indexBufferCube.getSize() /
+        indexBuffer.getSize() /
                          getIndexSize(_indexBufferCubeType),
                      1, 0, 0, 0);
 
@@ -937,10 +970,10 @@ void Application::recordShadowCommandBuffer(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, _shadowPipeline->getVkPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = meshComponent.vertexBufferPrimitive.getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferPrimitiveHandle).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = meshComponent.indexBuffer;
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
@@ -1010,9 +1043,9 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         .model = transformComponent.model,
         .descriptorHandles = {
             static_cast<uint32_t>(*_envMappingHandle),
-            static_cast<uint32_t>(materialComponent.diffuse),
-            static_cast<uint32_t>(materialComponent.normal),
-            static_cast<uint32_t>(materialComponent.metallicRoughness),
+            static_cast<uint32_t>(*materialComponent.diffuse),
+            static_cast<uint32_t>(*materialComponent.normal),
+            static_cast<uint32_t>(*materialComponent.metallicRoughness),
             static_cast<uint32_t>(*_shadowHandle)}};
 
     vkCmdPushConstants(
@@ -1020,10 +1053,10 @@ void Application::recordEnvMappingCommandBuffer(VkCommandBuffer commandBuffer) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
         sizeof(pc), &pc);
 
-    VkBuffer vertexBuffer = meshComponent.vertexBuffer.getVkBuffer();
+    VkBuffer vertexBuffer = _gpuBufferManager->getBuffer(meshComponent.vertexBufferHandle).getVkBuffer();
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-    const Buffer &indexBuffer = meshComponent.indexBuffer;
+    const Buffer &indexBuffer = _gpuBufferManager->getBuffer(meshComponent.indexBufferHandle);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer.getVkBuffer(), 0,
                          meshComponent.indexType);
 
