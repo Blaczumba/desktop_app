@@ -533,7 +533,9 @@ void Application::createShadowResources() {
       VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   _shadowRenderPass =
-      RenderpassBuilder(attachmentLayout).addSubpass({0}).build(_logicalDevice);
+      RenderpassBuilder(attachmentLayout)
+      .addSubpass({0})
+      .build(_logicalDevice);
   _shadowFramebuffer = Framebuffer::createFromTextures(
       _shadowRenderPass, std::span(&_shadowMap, 1));
 }
@@ -549,7 +551,6 @@ Application::~Application() {
 }
 
 void Application::run() {
-  updateUniformBuffer(_currentFrame);
   {
     SingleTimeCommandBuffer handle(*_singleTimeCommandPool);
     recordShadowCommandBuffer(handle.getCommandBuffer());
