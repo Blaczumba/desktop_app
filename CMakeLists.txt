@@ -62,8 +62,7 @@ add_compile_definitions(MODELS_PATH="${PROJECT_SOURCE_DIR}/assets/models/")
 
 add_subdirectory(bejzak_engine)
 
-add_executable(${CMAKE_PROJECT_NAME} main.cpp application.cpp)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE LibStrongTypes)
+add_executable(${CMAKE_PROJECT_NAME} main.cpp)
 target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC BejzakEngine)
 
 if(WIN32)
