@@ -57,10 +57,12 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
 endif()
 
+add_compile_definitions(TEXTURES_PATH="${PROJECT_SOURCE_DIR}/assets/textures/")
+add_compile_definitions(MODELS_PATH="${PROJECT_SOURCE_DIR}/assets/models/")
+
 add_subdirectory(bejzak_engine)
 
-add_executable(${CMAKE_PROJECT_NAME} main.cpp application.cpp)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE LibStrongTypes)
+add_executable(${CMAKE_PROJECT_NAME} main.cpp)
 target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC BejzakEngine)
 
 if(WIN32)
@@ -81,5 +83,3 @@ add_custom_target(
 add_dependencies(${CMAKE_PROJECT_NAME} CompileShaders)
 
 add_compile_definitions(SHADERS_PATH="${PROJECT_SOURCE_DIR}/bejzak_engine/shaders/")
-add_compile_definitions(TEXTURES_PATH="${PROJECT_SOURCE_DIR}/assets/textures/")
-add_compile_definitions(MODELS_PATH="${PROJECT_SOURCE_DIR}/assets/models/")
