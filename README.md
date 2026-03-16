@@ -9,7 +9,7 @@
 ### Downloading all the necessary repositories
 * git clone https://github.com/Blaczumba/desktop_app.git
 * cd desktop_app
-* git submodule update --init --recursive
+* git submodule add https://github.com/Blaczumba/bejzak_engine.git bejzak_engine
 
 ### Building for Windows
 * Install Visual Studio Community/Professional
