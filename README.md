@@ -16,10 +16,11 @@
 * Open repository folder with Visual Studio
 * Open CMakeLists.txt and save the file (ctrl + s)
 * Download gltf sponza model from https://sketchfab.com/3d-models/sponza-0cbee5e07f3a4fae95be8b3a036abc91
-* Put the "sponza" folder to desktop_app/assets/models (create folder if not existing)
+* Put the "sponza" folder to desktop_app/assets/models
 * Download cubemap_yokohama_rgba.ktx from https://github.com/SaschaWillems/Vulkan-Assets/tree/a27c0e584434d59b7c7a714e9180eefca6f0ec4b/textures
-* Put image to the desktop_app/assets/textures (create folder if not existing)
-* On the toolbar next to the green triangle select the target to run (VulkanProject.exe or VulkanTests.exe)
+* Put image to the desktop_app/assets/textures
+* In the 3D modelling tool like Blender create simple .obj object name it cone.obj and put it in the desktop_app/assets/models.
+* On the toolbar next to the green triangle select the target to run (DesktopApp.exe or BejzakEngineTests.exe)
 
 ### Building for Raspberry PI
 * Clone the repository
@@ -28,4 +29,4 @@
 * `$ cd build`
 * `$ make`
 * `$ cd bin`
-* `$ ./VulkanProject`
+* `$ ./DesktopApp.exe`
