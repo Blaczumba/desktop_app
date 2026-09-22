@@ -19,7 +19,7 @@
 * Put the "sponza" folder to desktop_app/assets/models
 * Download cubemap_yokohama_rgba.ktx from https://github.com/SaschaWillems/Vulkan-Assets/tree/a27c0e584434d59b7c7a714e9180eefca6f0ec4b/textures
 * Put image to the desktop_app/assets/textures
-* In the 3D modelling tool like Blender create simple .obj object name it cone.obj and put it in the desktop_app/assets/models.
+* In the 3D modelling tool like Blender create simple .obj object name it cube.obj and put it in the desktop_app/assets/models.
 * On the toolbar next to the green triangle select the target to run (DesktopApp.exe or BejzakEngineTests.exe)
 
 ### Building for Raspberry PI
