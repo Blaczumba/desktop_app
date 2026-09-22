@@ -1,4 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.19)
+include(FetchContent)
 
 set(CMAKE_PROJECT_NAME DesktopApp)
 
@@ -46,8 +47,6 @@ else()
     message(STATUS "Building in Debug mode.")
     add_definitions(-DVALIDATION_LAYERS_ENABLED)
 endif()
-
-add_definitions(-DGLM_FORCE_NO_CTOR_INIT)
 
 if(WIN32)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /W3")
